@@ -71,6 +71,14 @@
                     <div id="searchStatus" class="alert alert-info d-none">
                         <i class="fas fa-spinner fa-spin me-2"></i>Buscando videos virales...
                     </div>
+
+                    <div class="alert alert-warning">
+                        <h6><i class="fas fa-key me-2"></i>¿APIs configuradas?</h6>
+                        <p class="mb-2">Para análisis avanzado con IA, configura OpenAI o Claude</p>
+                        <a href="{{ url_for('api_config') }}" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-cog me-1"></i>Configurar APIs
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
@@ -497,6 +505,11 @@ function showVideoDetailsModal(videoInfo, shorts) {
                                             <div class="mt-2">
                                                 <small class="text-muted">${short.momento_viral}</small>
                                             </div>
+                                            <div class="mt-2">
+                                                <button class="btn btn-sm btn-outline-primary" onclick="generateScriptFile(${short.id})">
+                                                    <i class="fas fa-file-markdown me-1"></i>Generar .md
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 `).join('') : '<p class="text-muted">No hay shorts generados aún</p>'}
@@ -562,6 +575,124 @@ function showCreateWeekNotification() {
 function createWeekWithShorts() {
     // Redirigir a creación de semana con shorts generados
     window.location.href = '/crear-semana-con-shorts';
+}
+
+async function generateScriptFile(shortId) {
+    try {
+        const button = document.querySelector(`button[onclick="generateScriptFile(${shortId})"]`);
+        const originalText = button.innerHTML;
+        
+        button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Generando...';
+        button.disabled = true;
+        
+        const response = await fetch(`/api/generate-script-file/${shortId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            button.innerHTML = '<i class="fas fa-check me-1"></i>Generado';
+            button.classList.remove('btn-outline-primary');
+            button.classList.add('btn-success');
+            
+            // Mostrar modal con el contenido generado
+            showScriptPreview(data.filename, data.content);
+            
+            // Mostrar notificación de éxito
+            showNotification('success', `✅ Guión generado: ${data.filename}`);
+            
+        } else {
+            throw new Error(data.error);
+        }
+        
+    } catch (error) {
+        console.error('Error:', error);
+        button.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>Error';
+        button.classList.add('btn-danger');
+        showNotification('error', 'Error generando guión: ' + error.message);
+    }
+}
+
+function showScriptPreview(filename, content) {
+    const modalHtml = `
+        <div class="modal fade" id="scriptPreviewModal" tabindex="-1">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="fas fa-file-markdown me-2"></i>
+                            Guión Generado: ${filename}
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <button class="btn btn-outline-primary me-2" onclick="copyToClipboard('${content.replace(/'/g, "\\'")}')">
+                                <i class="fas fa-copy me-1"></i>Copiar Contenido
+                            </button>
+                            <button class="btn btn-outline-success" onclick="downloadScript('${filename}', '${content.replace(/'/g, "\\'")}')">
+                                <i class="fas fa-download me-1"></i>Descargar .md
+                            </button>
+                        </div>
+                        <div class="bg-light p-3 rounded" style="max-height: 60vh; overflow-y: auto;">
+                            <pre style="white-space: pre-wrap; font-size: 0.9em;">${content}</pre>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Añadir modal al DOM y mostrarlo
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const modal = new bootstrap.Modal(document.getElementById('scriptPreviewModal'));
+    modal.show();
+    
+    // Limpiar modal cuando se cierre
+    document.getElementById('scriptPreviewModal').addEventListener('hidden.bs.modal', function() {
+        this.remove();
+    });
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        showNotification('success', '✅ Contenido copiado al portapapeles');
+    }).catch(err => {
+        console.error('Error copying text: ', err);
+        showNotification('error', '❌ Error copiando contenido');
+    });
+}
+
+function downloadScript(filename, content) {
+    const element = document.createElement('a');
+    const file = new Blob([content], { type: 'text/markdown' });
+    element.href = URL.createObjectURL(file);
+    element.download = filename;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+    showNotification('success', `✅ Descargado: ${filename}`);
+}
+
+function showNotification(type, message) {
+    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+    const notification = document.createElement('div');
+    notification.className = `alert ${alertClass} alert-dismissible position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-hide después de 5 segundos
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
 }
 </script>
 

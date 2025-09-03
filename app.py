@@ -724,6 +724,10 @@ Formato JSON:
         else:
             # Fallback: análisis básico sin IA
             analysis = create_basic_analysis(video_info)
+        
+        # Generar guiones completos para cada momento
+        for momento in analysis['momentos_virales']:
+            momento['guion_completo'] = generate_complete_script(video_info, momento)
             
         return analysis
         
@@ -811,12 +815,15 @@ def generate_shorts_from_analysis(video_id, video_title, analysis_data):
         shorts_generated = []
         
         for i, momento in enumerate(analysis_data['momentos_virales'], 1):
+            # Generar guión completo en formato JSON
+            guion_json = json.dumps(momento.get('guion_completo', {}), indent=2, ensure_ascii=False)
+            
             # Crear nuevo short en la base de datos
             nuevo_short = Short(
                 titulo=momento['titulo'],
                 descripcion=momento['descripcion'],
                 tema=analysis_data.get('nicho', 'general'),
-                estado='investigacion',
+                estado='guion_generado',  # Estado actualizado porque ya tiene guión
                 video_fuente_id=video_id,
                 video_fuente_titulo=video_title,
                 url_fuente=f"https://youtube.com/watch?v={video_id}",
@@ -825,6 +832,7 @@ def generate_shorts_from_analysis(video_id, video_title, analysis_data):
                 hook=momento['hook'],
                 momento_viral=momento['momento'],
                 razon_viral=momento['razon'],
+                guion_generado=guion_json,  # Guión completo en JSON
                 vph_fuente=0,  # Se puede calcular después
                 usuario_id=current_user.id,
                 fecha_creacion=datetime.utcnow()
@@ -878,6 +886,182 @@ def calculate_end_timestamp(start_timestamp):
     except:
         return "01:00"  # Fallback
 
+def generate_complete_script(video_info, momento):
+    """Generar guión completo con timestamps, voice-over y instrucciones de edición"""
+    try:
+        # Calcular timestamps precisos
+        start_time = momento['timestamp']
+        end_time = calculate_end_timestamp(start_time)
+        
+        # Crear prompt específico para guión completo
+        script_prompt = f"""
+Genera un guión COMPLETO para un short de YouTube basado en este momento viral:
+
+VIDEO ORIGINAL: {video_info['title']}
+CANAL: {video_info['channel']}
+MOMENTO VIRAL: {momento['momento']}
+HOOK: {momento['hook']}
+TIMESTAMP: {start_time} - {end_time}
+
+Crea un guión detallado con:
+
+1. INSTRUCCIONES DE CORTE:
+   - Timestamp exacto de inicio y fin
+   - Segmentos específicos para cortar
+   - Transiciones entre clips
+
+2. TEXTO DE VOICE-OVER:
+   - Script palabra por palabra 
+   - Indicaciones de entonación
+   - Pausas y énfasis
+
+3. INSTRUCCIONES DE EDICIÓN:
+   - Efectos visuales sugeridos
+   - Música/sonidos
+   - Texto en pantalla
+   - Zoom/cortes dinámicos
+
+4. OPTIMIZACIÓN VIRAL:
+   - Hook los primeros 3 segundos
+   - Call-to-action final
+   - Hashtags relevantes
+
+Formato de respuesta:
+{{
+  "timestamps": {{
+    "inicio": "{start_time}",
+    "fin": "{end_time}",
+    "segmentos_corte": ["00:05-00:15", "00:20-00:35", "00:45-01:00"]
+  }},
+  "voice_over": {{
+    "texto_completo": "Script palabra por palabra...",
+    "segmentos": [
+      {{"tiempo": "00:00-00:05", "texto": "Hook inicial...", "entonacion": "energética"}},
+      {{"tiempo": "00:05-00:30", "texto": "Contenido principal...", "entonacion": "explicativa"}},
+      {{"tiempo": "00:30-01:00", "texto": "Call to action...", "entonacion": "motivacional"}}
+    ]
+  }},
+  "instrucciones_edicion": {{
+    "efectos_visuales": ["Zoom al momento clave", "Transición dinámica"],
+    "musica": "Música de fondo energética, volumen bajo",
+    "texto_pantalla": ["DATO IMPACTANTE", "¿Sabías que...?"],
+    "cortes_dinamicos": "Corte cada 3-4 segundos para mantener atención"
+  }},
+  "optimizacion_viral": {{
+    "hook_3_segundos": "Frase impactante inicial",
+    "call_to_action": "Sígueme para más consejos como este",
+    "hashtags": "#finanzas #dinero #shorts #viral"
+  }}
+}}
+        """
+        
+        # Generar con IA si está disponible
+        if app.config['OPENAI_API_KEY']:
+            script = generate_script_with_openai(script_prompt)
+        elif anthropic_client:
+            script = generate_script_with_claude(script_prompt)
+        else:
+            script = create_basic_script(video_info, momento, start_time, end_time)
+            
+        return script
+        
+    except Exception as e:
+        print(f"❌ Error generando guión completo: {e}")
+        return create_basic_script(video_info, momento, start_time, end_time)
+
+def generate_script_with_openai(prompt):
+    """Generar guión con OpenAI"""
+    try:
+        import openai
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Eres un experto en creación de contenido viral para YouTube Shorts. Especialista en guiones detallados con timestamps precisos y instrucciones de edición. Siempre respondes en JSON válido."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1500,
+            temperature=0.7
+        )
+        
+        result = response.choices[0].message.content
+        return json.loads(result)
+        
+    except Exception as e:
+        print(f"❌ Error con OpenAI script: {e}")
+        raise
+
+def generate_script_with_claude(prompt):
+    """Generar guión con Claude"""
+    try:
+        response = anthropic_client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=1500,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        result = response.content[0].text
+        return json.loads(result)
+        
+    except Exception as e:
+        print(f"❌ Error con Claude script: {e}")
+        raise
+
+def create_basic_script(video_info, momento, start_time, end_time):
+    """Crear guión básico sin IA"""
+    return {
+        "timestamps": {
+            "inicio": start_time,
+            "fin": end_time,
+            "segmentos_corte": [f"{start_time}-{calculate_mid_timestamp(start_time, end_time)}", 
+                              f"{calculate_mid_timestamp(start_time, end_time)}-{end_time}"]
+        },
+        "voice_over": {
+            "texto_completo": f"{momento['hook']} En este video de {video_info['channel']}, descubrimos {momento['momento']}. {momento['razon']} ¡No te pierdas el resto del contenido!",
+            "segmentos": [
+                {"tiempo": "00:00-00:05", "texto": momento['hook'], "entonacion": "energética"},
+                {"tiempo": "00:05-00:50", "texto": f"En este video de {video_info['channel']}, descubrimos {momento['momento']}. {momento['razon']}", "entonacion": "explicativa"},
+                {"tiempo": "00:50-01:00", "texto": "¡No te pierdas el resto del contenido!", "entonacion": "motivacional"}
+            ]
+        },
+        "instrucciones_edicion": {
+            "efectos_visuales": ["Zoom al speaker", "Cortes dinámicos cada 3-5 segundos"],
+            "musica": "Música de fondo suave, volumen 20%",
+            "texto_pantalla": ["💡 DATO CLAVE", "👆 IMPORTANTE"],
+            "cortes_dinamicos": "Mantener ritmo rápido, cortar pausas"
+        },
+        "optimizacion_viral": {
+            "hook_3_segundos": momento['hook'][:50] + "...",
+            "call_to_action": "¿Quieres más consejos? ¡Sígueme!",
+            "hashtags": f"#{momento.get('tema', 'viral')} #shorts #viral #trending"
+        }
+    }
+
+def calculate_mid_timestamp(start, end):
+    """Calcular timestamp medio entre dos tiempos"""
+    try:
+        # Parsear timestamps
+        start_parts = start.split(':')
+        end_parts = end.split(':')
+        
+        # Convertir a segundos
+        start_seconds = int(start_parts[0]) * 60 + int(start_parts[1]) if len(start_parts) == 2 else int(start_parts[0]) * 3600 + int(start_parts[1]) * 60 + int(start_parts[2])
+        end_seconds = int(end_parts[0]) * 60 + int(end_parts[1]) if len(end_parts) == 2 else int(end_parts[0]) * 3600 + int(end_parts[1]) * 60 + int(end_parts[2])
+        
+        # Calcular medio
+        mid_seconds = (start_seconds + end_seconds) // 2
+        
+        # Convertir de vuelta
+        minutes = mid_seconds // 60
+        seconds = mid_seconds % 60
+        
+        return f"{minutes:02d}:{seconds:02d}"
+        
+    except:
+        return "00:30"  # Fallback
+
 @app.route('/crear-semana-con-shorts')
 @login_required
 def crear_semana_con_shorts():
@@ -923,6 +1107,196 @@ def crear_semana_con_shorts():
         db.session.rollback()
         flash(f'Error creando semana: {e}', 'error')
         return redirect(url_for('video_discovery'))
+
+@app.route('/api/generate-script-file/<int:short_id>')
+@login_required
+def generate_script_file(short_id):
+    """Generar archivo .md con el guión completo"""
+    try:
+        short = Short.query.get_or_404(short_id)
+        
+        # Parsear guión JSON
+        if short.guion_generado:
+            guion_data = json.loads(short.guion_generado)
+        else:
+            return jsonify({'success': False, 'error': 'No hay guión generado para este short'}), 404
+        
+        # Generar contenido del archivo .md
+        md_content = generate_markdown_script(short, guion_data)
+        
+        # Determinar nombre del archivo
+        filename = generate_script_filename(short)
+        
+        # Crear directorio si no existe
+        script_dir = os.path.join(os.getcwd(), 'guiones_shorts', short.dia_nombre or 'sin_asignar')
+        os.makedirs(script_dir, exist_ok=True)
+        
+        # Escribir archivo
+        filepath = os.path.join(script_dir, filename)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(md_content)
+        
+        return jsonify({
+            'success': True,
+            'filepath': filepath,
+            'filename': filename,
+            'content': md_content
+        })
+        
+    except Exception as e:
+        print(f"❌ Error generando archivo script: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def generate_markdown_script(short, guion_data):
+    """Generar contenido markdown del guión"""
+    
+    # Obtener datos del guión
+    timestamps = guion_data.get('timestamps', {})
+    voice_over = guion_data.get('voice_over', {})
+    instrucciones = guion_data.get('instrucciones_edicion', {})
+    optimizacion = guion_data.get('optimizacion_viral', {})
+    
+    # Generar contenido markdown
+    md_content = f"""# {short.titulo}
+
+## 📹 Información del Video Fuente
+
+- **Canal**: {short.video_fuente_titulo or 'Sin especificar'}
+- **URL**: {short.url_fuente or 'Sin especificar'}
+- **VPH**: {short.vph_fuente}
+- **Tema**: {short.tema}
+
+## ⏱️ Timestamps de Corte
+
+### Segmento Principal
+- **Inicio**: {timestamps.get('inicio', 'No especificado')}
+- **Fin**: {timestamps.get('fin', 'No especificado')}
+
+### Segmentos Específicos para Cortar
+{chr(10).join([f"- {segmento}" for segmento in timestamps.get('segmentos_corte', ['No especificado'])])}
+
+## 🎙️ Guión de Voice-Over
+
+### Texto Completo
+{voice_over.get('texto_completo', 'No especificado')}
+
+### Segmentos por Tiempo
+
+{chr(10).join([
+    f"""#### {segmento.get('tiempo', 'Sin tiempo')}
+**Entonación**: {segmento.get('entonacion', 'Normal')}
+
+> {segmento.get('texto', 'Sin texto')}
+""" for segmento in voice_over.get('segmentos', [])
+])}
+
+## 🎬 Instrucciones de Edición
+
+### Efectos Visuales
+{chr(10).join([f"- {efecto}" for efecto in instrucciones.get('efectos_visuales', ['Sin especificar'])])}
+
+### Música y Audio
+- **Música**: {instrucciones.get('musica', 'Sin especificar')}
+- **Cortes Dinámicos**: {instrucciones.get('cortes_dinamicos', 'Sin especificar')}
+
+### Texto en Pantalla
+{chr(10).join([f"- {texto}" for texto in instrucciones.get('texto_pantalla', ['Sin especificar'])])}
+
+## 🚀 Optimización Viral
+
+### Hook (Primeros 3 segundos)
+> {optimizacion.get('hook_3_segundos', short.hook or 'Sin especificar')}
+
+### Call to Action
+> {optimizacion.get('call_to_action', 'Sin especificar')}
+
+### Hashtags
+```
+{optimizacion.get('hashtags', 'Sin especificar')}
+```
+
+## 📊 Información Adicional
+
+- **Momento Viral**: {short.momento_viral or 'Sin especificar'}
+- **Razón de Viralidad**: {short.razon_viral or 'Sin especificar'}
+- **Estado**: {short.estado}
+- **Fecha de Creación**: {short.fecha_creacion.strftime('%d/%m/%Y %H:%M') if short.fecha_creacion else 'Sin especificar'}
+
+---
+
+### Notas de Producción
+{short.notas or 'Sin notas adicionales'}
+
+---
+*Generado automáticamente por Viral Shorts Manager*
+"""
+    
+    return md_content
+
+def generate_script_filename(short):
+    """Generar nombre del archivo basado en el short"""
+    # Limpiar título para nombre de archivo
+    clean_title = "".join(c for c in short.titulo if c.isalnum() or c in (' ', '-', '_')).rstrip()
+    clean_title = clean_title.replace(' ', '_').upper()
+    
+    # Determinar prefijo del día
+    day_prefix = short.dia_nombre.upper() if short.dia_nombre else 'SHORT'
+    order_suffix = f"_{short.orden_dia:02d}" if short.orden_dia else ""
+    
+    return f"{day_prefix}{order_suffix}_{clean_title}.md"
+
+@app.route('/api-config')
+@login_required
+def api_config():
+    """Página de configuración de APIs"""
+    openai_configured = bool(app.config.get('OPENAI_API_KEY'))
+    claude_configured = bool(anthropic_client)
+    
+    return render_template('api_config.html', 
+                         openai_configured=openai_configured,
+                         claude_configured=claude_configured)
+
+@app.route('/api/test-apis', methods=['POST'])
+@login_required
+def test_apis():
+    """Probar configuración de APIs"""
+    try:
+        openai_works = False
+        claude_works = False
+        
+        # Probar OpenAI
+        if app.config.get('OPENAI_API_KEY'):
+            try:
+                import openai
+                response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": "Hola, responde solo 'OK'"}],
+                    max_tokens=5
+                )
+                openai_works = True
+            except Exception as e:
+                print(f"OpenAI test failed: {e}")
+        
+        # Probar Claude
+        if anthropic_client:
+            try:
+                response = anthropic_client.messages.create(
+                    model="claude-3-sonnet-20240229",
+                    max_tokens=5,
+                    messages=[{"role": "user", "content": "Responde solo 'OK'"}]
+                )
+                claude_works = True
+            except Exception as e:
+                print(f"Claude test failed: {e}")
+        
+        return jsonify({
+            'success': True,
+            'openai': openai_works,
+            'claude': claude_works
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/nueva_semana')
 @login_required

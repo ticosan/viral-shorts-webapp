@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block title %}Configuración API - Viral Shorts Manager{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-key me-2"></i>Configuración de APIs</h4>
+                    <p class="mb-0 text-muted">Configura las claves de API para habilitar el análisis avanzado con IA</p>
+                </div>
+                <div class="card-body">
+                    
+                    <!-- Estado actual -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <div class="card {{ 'border-success' if openai_configured else 'border-warning' }}">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-robot fa-2x mb-2 {{ 'text-success' if openai_configured else 'text-warning' }}"></i>
+                                    <h6>OpenAI (GPT)</h6>
+                                    <span class="badge {{ 'bg-success' if openai_configured else 'bg-warning' }}">
+                                        {{ '✅ Configurado' if openai_configured else '⚠️ No configurado' }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card {{ 'border-success' if claude_configured else 'border-warning' }}">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-brain fa-2x mb-2 {{ 'text-success' if claude_configured else 'text-warning' }}"></i>
+                                    <h6>Claude (Anthropic)</h6>
+                                    <span class="badge {{ 'bg-success' if claude_configured else 'bg-warning' }}">
+                                        {{ '✅ Configurado' if claude_configured else '⚠️ No configurado' }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Instrucciones OpenAI -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5><i class="fab fa-openai me-2"></i>OpenAI (Recomendado)</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>📋 Pasos:</h6>
+                                    <ol>
+                                        <li>Ve a <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a></li>
+                                        <li>Click "Create new secret key"</li>
+                                        <li>Copia la clave generada</li>
+                                        <li>En Railway, ve a <strong>Variables</strong></li>
+                                        <li>Añade: <code>OPENAI_API_KEY=tu_clave_aqui</code></li>
+                                        <li>Deploy la aplicación</li>
+                                    </ol>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>💰 Costos aproximados:</h6>
+                                    <ul class="list-unstyled">
+                                        <li><span class="badge bg-info">GPT-3.5-turbo</span> ~$0.002/1K tokens</li>
+                                        <li><span class="badge bg-success">1 análisis</span> ~$0.01-0.03</li>
+                                        <li><span class="badge bg-primary">21 shorts</span> ~$0.21-0.63</li>
+                                    </ul>
+                                    <div class="alert alert-info">
+                                        <small><strong>Tip:</strong> Puedes empezar con $5 de crédito</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Instrucciones Claude -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5><i class="fas fa-brain me-2"></i>Claude (Anthropic)</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>📋 Pasos:</h6>
+                                    <ol>
+                                        <li>Ve a <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a></li>
+                                        <li>Click "Create Key"</li>
+                                        <li>Copia la clave generada</li>
+                                        <li>En Railway, ve a <strong>Variables</strong></li>
+                                        <li>Añade: <code>ANTHROPIC_API_KEY=tu_clave_aqui</code></li>
+                                        <li>Deploy la aplicación</li>
+                                    </ol>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>💰 Costos aproximados:</h6>
+                                    <ul class="list-unstyled">
+                                        <li><span class="badge bg-info">Claude-3-sonnet</span> ~$0.003/1K tokens</li>
+                                        <li><span class="badge bg-success">1 análisis</span> ~$0.02-0.05</li>
+                                        <li><span class="badge bg-primary">21 shorts</span> ~$0.42-1.05</li>
+                                    </ul>
+                                    <div class="alert alert-warning">
+                                        <small><strong>Nota:</strong> Más caro pero más preciso</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Railway Instructions -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5><i class="fas fa-train me-2"></i>Configurar en Railway</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <img src="https://railway.app/brand/logo-light.png" alt="Railway" class="img-fluid mb-2" style="max-height: 40px;">
+                                    <ol>
+                                        <li>Ve a tu proyecto en Railway</li>
+                                        <li>Click en la tab <strong>"Variables"</strong></li>
+                                        <li>Click <strong>"+ New Variable"</strong></li>
+                                        <li>Añade la variable (nombre y valor)</li>
+                                        <li>La app se redesplegará automáticamente</li>
+                                    </ol>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="alert alert-success">
+                                        <h6><i class="fas fa-lightbulb me-1"></i>Tips:</h6>
+                                        <ul class="mb-0">
+                                            <li>Las variables son privadas y seguras</li>
+                                            <li>El deploy toma 2-3 minutos</li>
+                                            <li>Puedes configurar ambas APIs</li>
+                                            <li>OpenAI tiene prioridad si ambas están configuradas</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sin API Keys -->
+                    <div class="card border-secondary">
+                        <div class="card-header">
+                            <h5><i class="fas fa-cogs me-2"></i>Sin API Keys (Modo Básico)</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <strong><i class="fas fa-info-circle me-2"></i>El sistema funciona sin APIs</strong><br>
+                                Se usará análisis básico con plantillas predefinidas. Los guiones serán funcionales pero menos precisos.
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>✅ Funciona:</h6>
+                                    <ul>
+                                        <li>Búsqueda de videos virales</li>
+                                        <li>Detección VPH y métricas</li>
+                                        <li>Generación de shorts básicos</li>
+                                        <li>Timestamps estimados</li>
+                                        <li>Hooks genéricos</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>❌ No disponible:</h6>
+                                    <ul>
+                                        <li>Análisis inteligente de contenido</li>
+                                        <li>Hooks específicos por video</li>
+                                        <li>Segmentación precisa</li>
+                                        <li>Análisis de momentos virales</li>
+                                        <li>Optimización automática</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center mt-4">
+                        <a href="{{ url_for('video_discovery') }}" class="btn btn-primary">
+                            <i class="fas fa-rocket me-2"></i>Volver al Descubrimiento
+                        </a>
+                        <button class="btn btn-outline-primary" onclick="testAPIs()">
+                            <i class="fas fa-flask me-1"></i>Probar APIs
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function testAPIs() {
+    const button = event.target;
+    const originalText = button.innerHTML;
+    
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Probando...';
+    button.disabled = true;
+    
+    try {
+        const response = await fetch('/api/test-apis', {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`✅ APIs probadas exitosamente:\n\nOpenAI: ${data.openai ? '✅ Funciona' : '❌ No configurado'}\nClaude: ${data.claude ? '✅ Funciona' : '❌ No configurado'}`);
+            location.reload();
+        } else {
+            alert('❌ Error probando APIs: ' + data.error);
+        }
+        
+    } catch (error) {
+        alert('❌ Error de conexión: ' + error.message);
+    } finally {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    }
+}
+</script>
+{% endblock %}
