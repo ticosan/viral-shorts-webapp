@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+
+{% block title %}Análisis de Canales - Viral Shorts Manager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-users me-2"></i>Analizar Canal de YouTube</h5>
+            </div>
+            <div class="card-body">
+                <form id="canalForm">
+                    <div class="mb-3">
+                        <label class="form-label">URL del Canal</label>
+                        <input type="url" class="form-control" name="canal_url" 
+                               placeholder="https://youtube.com/@username o https://youtube.com/channel/..." 
+                               required>
+                        <small class="form-text text-muted">
+                            Ejemplos: @MrBeast, @alexhormozi, etc.
+                        </small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-chart-line me-2"></i>Analizar Canal
+                    </button>
+                </form>
+                
+                <div class="mt-3" id="analisisInfo" style="display:none;">
+                    <div class="alert alert-info">
+                        <small>
+                            <i class="fas fa-info-circle me-1"></i>
+                            Analizando los últimos 10 videos para patrones virales
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Canales sugeridos -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6><i class="fas fa-fire me-2"></i>Canales Virales Sugeridos</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <button class="list-group-item list-group-item-action" onclick="analizarCanalSugerido('@MrBeast')">
+                        <strong>@MrBeast</strong><br>
+                        <small class="text-muted">Entretenimiento viral</small>
+                    </button>
+                    <button class="list-group-item list-group-item-action" onclick="analizarCanalSugerido('@alexhormozi')">
+                        <strong>@AlexHormozi</strong><br>
+                        <small class="text-muted">Emprendimiento</small>
+                    </button>
+                    <button class="list-group-item list-group-item-action" onclick="analizarCanalSugerido('@GrahamStephan')">
+                        <strong>@GrahamStephan</strong><br>
+                        <small class="text-muted">Finanzas personales</small>
+                    </button>
+                    <button class="list-group-item list-group-item-action" onclick="analizarCanalSugerido('@garyvee')">
+                        <strong>@GaryVee</strong><br>
+                        <small class="text-muted">Marketing y negocios</small>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-bar me-2"></i>Resultado del Análisis</h5>
+            </div>
+            <div class="card-body">
+                <div id="loading" style="display:none;" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-3">Analizando canal y videos...</p>
+                </div>
+                
+                <div id="noResults" class="text-center py-5 text-muted">
+                    <i class="fas fa-users fa-3x mb-3 opacity-50"></i>
+                    <p>Introduce la URL de un canal para comenzar el análisis</p>
+                </div>
+                
+                <div id="results" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    $('#canalForm').submit(function(e) {
+        e.preventDefault();
+        analizarCanal();
+    });
+});
+
+function analizarCanalSugerido(username) {
+    $('input[name="canal_url"]').val('https://youtube.com/' + username);
+    analizarCanal();
+}
+
+function analizarCanal() {
+    const formData = new FormData($('#canalForm')[0]);
+    const data = Object.fromEntries(formData);
+    
+    $('#loading').show();
+    $('#noResults').hide();
+    $('#results').hide();
+    $('#analisisInfo').show();
+    
+    $.ajax({
+        url: '/api/analizar_canal',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function(response) {
+            $('#loading').hide();
+            
+            if (response.success) {
+                mostrarAnalisisCanal(response.resultado);
+            } else {
+                $('#noResults').show();
+            }
+        },
+        error: function(xhr) {
+            $('#loading').hide();
+            const error = xhr.responseJSON?.error || 'Error de conexión';
+            $('#results').html(`
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    ${error}
+                </div>
+            `).show();
+        }
+    });
+}
+
+function mostrarAnalisisCanal(resultado) {
+    const canal = resultado.canal_info;
+    const stats = resultado.estadisticas;
+    const virales = resultado.videos_virales;
+    
+    const suscriptores = parseInt(canal.suscriptores);
+    const susFormat = suscriptores > 1000000 ? 
+        (suscriptores / 1000000).toFixed(1) + 'M' : 
+        suscriptores > 1000 ? (suscriptores / 1000).toFixed(1) + 'K' : 
+        suscriptores.toLocaleString();
+    
+    let html = `
+        <!-- Información del Canal -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 text-center">
+                        <img src="${canal.thumbnail}" class="rounded-circle mb-2" style="width: 80px; height: 80px; object-fit: cover;">
+                        <h5>${canal.nombre}</h5>
+                    </div>
+                    <div class="col-md-9">
+                        <p class="text-muted">${canal.descripcion}</p>
+                        <div class="row text-center">
+                            <div class="col-3">
+                                <div class="border rounded p-2">
+                                    <small class="text-muted">Suscriptores</small><br>
+                                    <strong>${susFormat}</strong>
+                                </div>
+                            </div>
+                            <div class="col-3">
+                                <div class="border rounded p-2">
+                                    <small class="text-muted">Videos</small><br>
+                                    <strong>${parseInt(canal.total_videos).toLocaleString()}</strong>
+                                </div>
+                            </div>
+                            <div class="col-3">
+                                <div class="border rounded p-2">
+                                    <small class="text-muted">Views Totales</small><br>
+                                    <strong>${parseInt(canal.total_views) > 1000000 ? (parseInt(canal.total_views) / 1000000).toFixed(1) + 'M' : parseInt(canal.total_views).toLocaleString()}</strong>
+                                </div>
+                            </div>
+                            <div class="col-3">
+                                <div class="border rounded p-2">
+                                    <small class="text-muted">VPH Promedio</small><br>
+                                    <strong class="text-${stats.promedio_vph > 1000 ? 'success' : stats.promedio_vph > 500 ? 'warning' : 'info'}">${stats.promedio_vph}</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Estadísticas Clave -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body text-center">
+                        <h4>${stats.promedio_views.toLocaleString()}</h4>
+                        <small>Views Promedio</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <h4>${stats.promedio_vph}</h4>
+                        <small>VPH Promedio</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body text-center">
+                        <h4>${stats.promedio_engagement}%</h4>
+                        <small>Engagement Promedio</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body text-center">
+                        <h4>${stats.videos_analizados}</h4>
+                        <small>Videos Analizados</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Videos Más Virales -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6><i class="fas fa-fire me-2"></i>Top 3 Videos Más Virales (por VPH)</h6>
+            </div>
+            <div class="card-body">
+    `;
+    
+    virales.forEach((video, index) => {
+        const vphColor = video.vph > 1000 ? 'success' : video.vph > 500 ? 'warning' : 'info';
+        html += `
+            <div class="row mb-3 ${index < virales.length - 1 ? 'border-bottom pb-3' : ''}">
+                <div class="col-md-2">
+                    <img src="${video.thumbnail}" class="img-fluid rounded" alt="Thumbnail">
+                </div>
+                <div class="col-md-10">
+                    <h6 class="mb-2">${video.titulo}</h6>
+                    <div class="row text-center">
+                        <div class="col-3">
+                            <span class="badge bg-primary">${video.views.toLocaleString()} views</span>
+                        </div>
+                        <div class="col-3">
+                            <span class="badge bg-${vphColor}">${video.vph} VPH</span>
+                        </div>
+                        <div class="col-3">
+                            <span class="badge bg-secondary">${video.engagement}% engagement</span>
+                        </div>
+                        <div class="col-3">
+                            <a href="https://youtube.com/watch?v=${video.video_id}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-external-link-alt me-1"></i>Ver
+                            </a>
+                        </div>
+                    </div>
+                    <small class="text-muted">Publicado: ${new Date(video.publicado).toLocaleDateString('es-ES')}</small>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += `
+            </div>
+        </div>
+        
+        <!-- Recomendaciones de IA -->
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="fas fa-lightbulb me-2"></i>Recomendaciones para Replicar</h6>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-success">
+                    <h6><i class="fas fa-chart-line me-2"></i>Patrones Identificados:</h6>
+                    <ul class="mb-0">
+                        <li><strong>VPH Objetivo:</strong> ${stats.promedio_vph} (busca superar este promedio)</li>
+                        <li><strong>Engagement Objetivo:</strong> ${stats.promedio_engagement}% (nivel de interacción)</li>
+                        <li><strong>Mejor Momento:</strong> Videos con ${virales[0]?.vph || 0}+ VPH son los más virales</li>
+                        <li><strong>Frecuencia:</strong> ${Math.round(stats.videos_analizados / 7)} videos por semana aproximadamente</li>
+                    </ul>
+                </div>
+                
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                    <button class="btn btn-success" onclick="generarEstrategia('${canal.nombre}', ${stats.promedio_vph}, '${virales[0]?.titulo || ''}')">
+                        <i class="fas fa-brain me-1"></i>Generar Estrategia con IA
+                    </button>
+                    <button class="btn btn-primary" onclick="crearGuionesBasados()">
+                        <i class="fas fa-file-alt me-1"></i>Crear Guiones Basados
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    $('#results').html(html).show();
+}
+
+function generarEstrategia(nombreCanal, promedioVph, tituloViral) {
+    alert(\`Generando estrategia basada en \${nombreCanal} con IA... (Funcionalidad en desarrollo)\`);
+}
+
+function crearGuionesBasados() {
+    alert('Creando guiones basados en los patrones encontrados... (Funcionalidad en desarrollo)');
+}
+</script>
+{% endblock %}
