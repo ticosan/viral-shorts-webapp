@@ -10,6 +10,17 @@ import openai
 from anthropic import Anthropic
 
 app = Flask(__name__)
+
+# Hacer timedelta y otras utilidades disponibles en templates
+@app.template_global()
+def get_timedelta():
+    return timedelta
+
+@app.template_filter('add_days')
+def add_days(date, days):
+    """Añadir días a una fecha"""
+    return date + timedelta(days=days)
+
 app.config['SECRET_KEY'] = 'viral-shorts-manager-2024-secure-key'
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///shorts_manager.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -148,8 +159,7 @@ def old_dashboard():
                              todas_semanas=todas_semanas,
                              shorts_por_dia=shorts_por_dia,
                              dias_orden=dias_orden,
-                             stats=stats,
-                             timedelta=timedelta)
+                             stats=stats)
     except Exception as e:
         print(f"❌ Error en dashboard: {e}")
         # En caso de error, mostrar dashboard básico
@@ -159,7 +169,6 @@ def old_dashboard():
                              shorts_por_dia={},
                              dias_orden=[],
                              stats={},
-                             timedelta=timedelta,
                              error_message=f"Error cargando dashboard: {e}")
 
 @app.route('/video_discovery')

@@ -163,7 +163,7 @@
         <h5 class="mb-0">
             <i class="fas fa-calendar-day me-2"></i>
             {{ dia.title() }}
-            {% set fecha_dia = semana_actual.fecha_inicio + loop.index0 * timedelta(days=1) %}
+            {% set fecha_dia = semana_actual.fecha_inicio|add_days(loop.index0) %}
             <small class="text-muted ms-2">{{ fecha_dia.strftime('%d/%m') }}</small>
         </h5>
         {% set dia_shorts = shorts_por_dia[dia] %}
