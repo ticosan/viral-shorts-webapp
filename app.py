@@ -8,6 +8,8 @@ import json
 import requests
 import openai
 from anthropic import Anthropic
+import base64
+from cryptography.fernet import Fernet
 
 app = Flask(__name__)
 
@@ -104,6 +106,79 @@ class Short(db.Model):
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)  # Cuando se creó
     notas = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class ApiConfig(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    service_name = db.Column(db.String(50), nullable=False)  # 'openai', 'anthropic'
+    api_key = db.Column(db.String(500), nullable=False)  # Clave API encriptada
+    is_active = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_tested = db.Column(db.DateTime)
+    test_status = db.Column(db.String(20), default='not_tested')  # 'working', 'failed', 'not_tested'
+
+# Funciones para encriptación de API keys
+def get_encryption_key():
+    """Obtener o generar clave de encriptación"""
+    key = app.config.get('ENCRYPTION_KEY')
+    if not key:
+        # Usar SECRET_KEY como base para la encriptación
+        key_material = app.config['SECRET_KEY'].encode()
+        key_material = key_material.ljust(32)[:32]  # Asegurar 32 bytes
+        key = base64.urlsafe_b64encode(key_material)
+        app.config['ENCRYPTION_KEY'] = key
+    return key
+
+def encrypt_api_key(api_key):
+    """Encriptar API key"""
+    try:
+        f = Fernet(get_encryption_key())
+        encrypted_key = f.encrypt(api_key.encode())
+        return base64.urlsafe_b64encode(encrypted_key).decode()
+    except Exception as e:
+        print(f"Error encriptando API key: {e}")
+        return api_key  # Fallback sin encriptar
+
+def decrypt_api_key(encrypted_key):
+    """Desencriptar API key"""
+    try:
+        f = Fernet(get_encryption_key())
+        encrypted_bytes = base64.urlsafe_b64decode(encrypted_key.encode())
+        decrypted_key = f.decrypt(encrypted_bytes)
+        return decrypted_key.decode()
+    except Exception as e:
+        print(f"Error desencriptando API key: {e}")
+        return encrypted_key  # Fallback asumir no encriptado
+
+def get_api_key(service_name):
+    """Obtener API key de la base de datos"""
+    try:
+        config = ApiConfig.query.filter_by(
+            service_name=service_name,
+            is_active=True
+        ).first()
+        
+        if config:
+            return decrypt_api_key(config.api_key)
+        return None
+    except Exception as e:
+        print(f"Error obteniendo API key para {service_name}: {e}")
+        return None
+
+def update_api_client(service_name, api_key):
+    """Actualizar cliente de API en runtime"""
+    global anthropic_client
+    
+    if service_name == 'openai' and api_key:
+        openai.api_key = api_key
+        app.config['OPENAI_API_KEY'] = api_key
+    elif service_name == 'anthropic' and api_key:
+        try:
+            anthropic_client = Anthropic(api_key=api_key)
+            app.config['ANTHROPIC_API_KEY'] = api_key
+        except Exception as e:
+            print(f"Error configurando cliente Anthropic: {e}")
+            anthropic_client = None
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -1249,12 +1324,145 @@ def generate_script_filename(short):
 @login_required
 def api_config():
     """Página de configuración de APIs"""
-    openai_configured = bool(app.config.get('OPENAI_API_KEY'))
-    claude_configured = bool(anthropic_client)
+    # Cargar APIs desde base de datos
+    load_apis_from_database()
+    
+    openai_configured = bool(get_api_key('openai'))
+    claude_configured = bool(get_api_key('anthropic'))
     
     return render_template('api_config.html', 
                          openai_configured=openai_configured,
                          claude_configured=claude_configured)
+
+@app.route('/api/save-api-key', methods=['POST'])
+@login_required  
+def save_api_key():
+    """Guardar API key en la base de datos"""
+    try:
+        data = request.json
+        service = data.get('service')  # 'openai' or 'anthropic'
+        api_key = data.get('api_key')
+        
+        if not service or not api_key:
+            return jsonify({'success': False, 'error': 'Datos incompletos'}), 400
+        
+        # Validar formato de API key
+        if service == 'openai' and not api_key.startswith('sk-'):
+            return jsonify({'success': False, 'error': 'API key de OpenAI debe empezar con "sk-"'}), 400
+        elif service == 'anthropic' and not api_key.startswith('sk-ant-'):
+            return jsonify({'success': False, 'error': 'API key de Claude debe empezar con "sk-ant-"'}), 400
+        
+        # Desactivar configuración anterior
+        existing_config = ApiConfig.query.filter_by(service_name=service, is_active=True).first()
+        if existing_config:
+            existing_config.is_active = False
+        
+        # Encriptar y guardar nueva configuración
+        encrypted_key = encrypt_api_key(api_key)
+        new_config = ApiConfig(
+            service_name=service,
+            api_key=encrypted_key,
+            created_by=current_user.id,
+            is_active=True
+        )
+        
+        db.session.add(new_config)
+        
+        # Probar la API key antes de confirmar
+        update_api_client(service, api_key)
+        test_result = test_single_api(service)
+        
+        if test_result['working']:
+            new_config.test_status = 'working'
+            new_config.last_tested = datetime.utcnow()
+            db.session.commit()
+            
+            return jsonify({
+                'success': True, 
+                'message': f'{service.upper()} configurado y probado correctamente'
+            })
+        else:
+            db.session.rollback()
+            return jsonify({
+                'success': False, 
+                'error': f'API key no válida: {test_result["error"]}'
+            }), 400
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Error guardando API key: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/remove-api-key', methods=['POST'])
+@login_required
+def remove_api_key():
+    """Eliminar API key de la base de datos"""
+    try:
+        data = request.json
+        service = data.get('service')
+        
+        if not service:
+            return jsonify({'success': False, 'error': 'Servicio no especificado'}), 400
+        
+        # Desactivar configuración
+        config = ApiConfig.query.filter_by(service_name=service, is_active=True).first()
+        if config:
+            config.is_active = False
+            db.session.commit()
+            
+            # Limpiar cliente en memoria
+            if service == 'openai':
+                openai.api_key = None
+                app.config['OPENAI_API_KEY'] = None
+            elif service == 'anthropic':
+                global anthropic_client
+                anthropic_client = None
+                app.config['ANTHROPIC_API_KEY'] = None
+        
+        return jsonify({'success': True, 'message': f'{service.upper()} eliminado correctamente'})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def load_apis_from_database():
+    """Cargar APIs desde base de datos al inicializar"""
+    try:
+        openai_key = get_api_key('openai')
+        if openai_key:
+            update_api_client('openai', openai_key)
+            
+        claude_key = get_api_key('anthropic') 
+        if claude_key:
+            update_api_client('anthropic', claude_key)
+            
+    except Exception as e:
+        print(f"Error cargando APIs desde base de datos: {e}")
+
+def test_single_api(service):
+    """Probar una API específica"""
+    try:
+        if service == 'openai' and get_api_key('openai'):
+            import openai
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": "Responde solo: OK"}],
+                max_tokens=5
+            )
+            return {'working': True, 'error': None}
+            
+        elif service == 'anthropic' and anthropic_client:
+            response = anthropic_client.messages.create(
+                model="claude-3-sonnet-20240229",
+                max_tokens=5,
+                messages=[{"role": "user", "content": "Responde solo: OK"}]
+            )
+            return {'working': True, 'error': None}
+            
+        return {'working': False, 'error': 'API no configurada'}
+        
+    except Exception as e:
+        return {'working': False, 'error': str(e)}
 
 @app.route('/api/test-apis', methods=['POST'])
 @login_required

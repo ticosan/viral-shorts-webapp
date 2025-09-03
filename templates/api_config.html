@@ -13,27 +13,81 @@
                 </div>
                 <div class="card-body">
                     
-                    <!-- Estado actual -->
+                    <!-- Configuración Directa -->
                     <div class="row mb-4">
                         <div class="col-md-6">
-                            <div class="card {{ 'border-success' if openai_configured else 'border-warning' }}">
-                                <div class="card-body text-center">
-                                    <i class="fas fa-robot fa-2x mb-2 {{ 'text-success' if openai_configured else 'text-warning' }}"></i>
-                                    <h6>OpenAI (GPT)</h6>
+                            <div class="card {{ 'border-success' if openai_configured else 'border-primary' }}">
+                                <div class="card-header">
+                                    <h5><i class="fab fa-openai me-2"></i>OpenAI (GPT)</h5>
                                     <span class="badge {{ 'bg-success' if openai_configured else 'bg-warning' }}">
                                         {{ '✅ Configurado' if openai_configured else '⚠️ No configurado' }}
                                     </span>
                                 </div>
+                                <div class="card-body">
+                                    <form id="openaiForm">
+                                        <div class="mb-3">
+                                            <label class="form-label">API Key</label>
+                                            <div class="input-group">
+                                                <input type="password" class="form-control" id="openaiKey" 
+                                                       placeholder="{{ 'sk-****' if openai_configured else 'Pega tu API key aquí' }}" 
+                                                       {% if openai_configured %}value="sk-configured-hidden"{% endif %}>
+                                                <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('openaiKey')">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                            </div>
+                                            <small class="text-muted">
+                                                Obtén tu clave en <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a>
+                                            </small>
+                                        </div>
+                                        <div class="d-grid gap-2">
+                                            <button type="submit" class="btn btn-primary">
+                                                <i class="fas fa-save me-1"></i>Guardar y Probar
+                                            </button>
+                                            {% if openai_configured %}
+                                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeApiKey('openai')">
+                                                <i class="fas fa-trash me-1"></i>Eliminar
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                    </form>
+                                </div>
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <div class="card {{ 'border-success' if claude_configured else 'border-warning' }}">
-                                <div class="card-body text-center">
-                                    <i class="fas fa-brain fa-2x mb-2 {{ 'text-success' if claude_configured else 'text-warning' }}"></i>
-                                    <h6>Claude (Anthropic)</h6>
+                            <div class="card {{ 'border-success' if claude_configured else 'border-primary' }}">
+                                <div class="card-header">
+                                    <h5><i class="fas fa-brain me-2"></i>Claude (Anthropic)</h5>
                                     <span class="badge {{ 'bg-success' if claude_configured else 'bg-warning' }}">
                                         {{ '✅ Configurado' if claude_configured else '⚠️ No configurado' }}
                                     </span>
+                                </div>
+                                <div class="card-body">
+                                    <form id="claudeForm">
+                                        <div class="mb-3">
+                                            <label class="form-label">API Key</label>
+                                            <div class="input-group">
+                                                <input type="password" class="form-control" id="claudeKey" 
+                                                       placeholder="{{ 'sk-ant-****' if claude_configured else 'Pega tu API key aquí' }}"
+                                                       {% if claude_configured %}value="sk-ant-configured-hidden"{% endif %}>
+                                                <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('claudeKey')">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                            </div>
+                                            <small class="text-muted">
+                                                Obtén tu clave en <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a>
+                                            </small>
+                                        </div>
+                                        <div class="d-grid gap-2">
+                                            <button type="submit" class="btn btn-primary">
+                                                <i class="fas fa-save me-1"></i>Guardar y Probar
+                                            </button>
+                                            {% if claude_configured %}
+                                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeApiKey('anthropic')">
+                                                <i class="fas fa-trash me-1"></i>Eliminar
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                    </form>
                                 </div>
                             </div>
                         </div>
@@ -187,6 +241,99 @@
 </div>
 
 <script>
+// Manejar formularios
+document.getElementById('openaiForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    await saveApiKey('openai', document.getElementById('openaiKey').value);
+});
+
+document.getElementById('claudeForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    await saveApiKey('anthropic', document.getElementById('claudeKey').value);
+});
+
+async function saveApiKey(service, apiKey) {
+    if (!apiKey || apiKey.includes('configured-hidden')) {
+        alert('Por favor ingresa una API key válida');
+        return;
+    }
+    
+    const button = document.querySelector(`#${service === 'openai' ? 'openaiForm' : 'claudeForm'} button[type="submit"]`);
+    const originalText = button.innerHTML;
+    
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Guardando...';
+    button.disabled = true;
+    
+    try {
+        const response = await fetch('/api/save-api-key', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                service: service,
+                api_key: apiKey
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showAlert('success', `✅ ${service.toUpperCase()} configurado correctamente y probado`);
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showAlert('error', `❌ Error: ${data.error}`);
+        }
+        
+    } catch (error) {
+        showAlert('error', `❌ Error de conexión: ${error.message}`);
+    } finally {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    }
+}
+
+async function removeApiKey(service) {
+    if (!confirm(`¿Estás seguro de eliminar la configuración de ${service.toUpperCase()}?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/remove-api-key', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ service: service })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showAlert('success', `✅ ${service.toUpperCase()} eliminado correctamente`);
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showAlert('error', `❌ Error: ${data.error}`);
+        }
+        
+    } catch (error) {
+        showAlert('error', `❌ Error: ${error.message}`);
+    }
+}
+
+function togglePassword(inputId) {
+    const input = document.getElementById(inputId);
+    const icon = input.nextElementSibling.querySelector('i');
+    
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'fas fa-eye-slash';
+    } else {
+        input.type = 'password';
+        icon.className = 'fas fa-eye';
+    }
+}
+
 async function testAPIs() {
     const button = event.target;
     const originalText = button.innerHTML;
@@ -202,18 +349,36 @@ async function testAPIs() {
         const data = await response.json();
         
         if (data.success) {
-            alert(`✅ APIs probadas exitosamente:\n\nOpenAI: ${data.openai ? '✅ Funciona' : '❌ No configurado'}\nClaude: ${data.claude ? '✅ Funciona' : '❌ No configurado'}`);
-            location.reload();
+            showAlert('success', `✅ APIs probadas:\n\nOpenAI: ${data.openai ? '✅ Funciona' : '❌ No configurado'}\nClaude: ${data.claude ? '✅ Funciona' : '❌ No configurado'}`);
         } else {
-            alert('❌ Error probando APIs: ' + data.error);
+            showAlert('error', '❌ Error probando APIs: ' + data.error);
         }
         
     } catch (error) {
-        alert('❌ Error de conexión: ' + error.message);
+        showAlert('error', '❌ Error de conexión: ' + error.message);
     } finally {
         button.innerHTML = originalText;
         button.disabled = false;
     }
+}
+
+function showAlert(type, message) {
+    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert ${alertClass} alert-dismissible position-fixed`;
+    alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 400px;';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(alertDiv);
+    
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 5000);
 }
 </script>
 {% endblock %}
