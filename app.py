@@ -69,23 +69,39 @@ class Semana(db.Model):
 
 class Short(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    semana_id = db.Column(db.Integer, db.ForeignKey('semana.id'), nullable=False)
-    dia_publicacion = db.Column(db.Date, nullable=False)  # Fecha específica de publicación
-    dia_nombre = db.Column(db.String(10), nullable=False)  # 'lunes', 'martes', etc.
+    semana_id = db.Column(db.Integer, db.ForeignKey('semana.id'), nullable=True)  # Nullable para shorts no asignados
+    dia_publicacion = db.Column(db.Date, nullable=True)  # Fecha específica de publicación
+    dia_nombre = db.Column(db.String(10), nullable=True)  # 'lunes', 'martes', etc.
     orden_dia = db.Column(db.Integer, default=1)  # Por si hay múltiples videos el mismo día
     titulo = db.Column(db.String(200), nullable=False)
+    descripcion = db.Column(db.Text)  # Descripción del short
     tema = db.Column(db.String(50), nullable=False)
     estado = db.Column(db.String(20), default='investigacion')  # investigacion, guion_generado, en_proceso, completado, cancelado
     views = db.Column(db.Integer, default=0)
     engagement = db.Column(db.Float, default=0.0)
     url_youtube = db.Column(db.String(200))
+    
+    # Información del video fuente
     video_fuente_url = db.Column(db.String(200))
     video_fuente_id = db.Column(db.String(50))  # YouTube video ID
+    video_fuente_titulo = db.Column(db.String(200))  # Título del video original
+    url_fuente = db.Column(db.String(200))  # URL completa del video fuente
     vph_fuente = db.Column(db.Float, default=0.0)
+    
+    # Información de momentos virales (análisis IA)
+    timestamp_inicio = db.Column(db.String(10))  # "05:30"
+    timestamp_fin = db.Column(db.String(10))  # "06:30" 
+    hook = db.Column(db.String(500))  # Hook viral para enganchar
+    momento_viral = db.Column(db.Text)  # Descripción del momento viral
+    razon_viral = db.Column(db.Text)  # Por qué sería viral
+    
+    # Generación y producción
     guion_generado = db.Column(db.Text)  # Guión generado por IA
     video_descargado = db.Column(db.Boolean, default=False)
     completado_por = db.Column(db.Integer, db.ForeignKey('user.id'))
     completado_at = db.Column(db.DateTime)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('user.id'))  # Quien creó el short
+    fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)  # Cuando se creó
     notas = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -523,6 +539,390 @@ def analyze_channels_growth(channel_ids):
     except Exception as e:
         print(f"❌ Error en análisis de canales: {e}")
         return {}
+
+@app.route('/api/analyze-video', methods=['POST'])
+@login_required
+def analyze_video_with_ai():
+    """Analizar video con IA para identificar momentos virales"""
+    try:
+        video_id = request.json.get('video_id')
+        video_title = request.json.get('video_title', '')
+        
+        if not video_id:
+            return jsonify({'success': False, 'error': 'ID de video requerido'}), 400
+            
+        print(f"🧠 Analizando video con IA: {video_id}")
+        
+        # Obtener información detallada del video
+        video_info = get_video_detailed_info(video_id)
+        
+        if not video_info:
+            return jsonify({'success': False, 'error': 'No se pudo obtener información del video'}), 404
+        
+        # Analizar con IA (OpenAI o Claude)
+        analysis_result = analyze_video_content_with_ai(video_info)
+        
+        return jsonify({
+            'success': True,
+            'video_id': video_id,
+            'analysis': analysis_result,
+            'video_info': video_info
+        })
+        
+    except Exception as e:
+        print(f"❌ Error analizando video: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/generate-shorts', methods=['POST'])
+@login_required
+def generate_shorts_from_video():
+    """Generar shorts automáticamente desde un video"""
+    try:
+        video_id = request.json.get('video_id')
+        video_title = request.json.get('video_title', '')
+        analysis_data = request.json.get('analysis_data')  # Análisis previo opcional
+        
+        if not video_id:
+            return jsonify({'success': False, 'error': 'ID de video requerido'}), 400
+            
+        print(f"✂️ Generando shorts para video: {video_id}")
+        
+        # Si no hay análisis previo, hacerlo ahora
+        if not analysis_data:
+            video_info = get_video_detailed_info(video_id)
+            analysis_data = analyze_video_content_with_ai(video_info)
+        
+        # Generar shorts basados en el análisis
+        shorts_generated = generate_shorts_from_analysis(video_id, video_title, analysis_data)
+        
+        return jsonify({
+            'success': True,
+            'video_id': video_id,
+            'shorts_generated': len(shorts_generated),
+            'shorts': shorts_generated
+        })
+        
+    except Exception as e:
+        print(f"❌ Error generando shorts: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/video-details/<video_id>')
+@login_required
+def get_video_details(video_id):
+    """Obtener detalles completos de un video incluyendo shorts generados"""
+    try:
+        # Obtener información del video
+        video_info = get_video_detailed_info(video_id)
+        
+        # Buscar shorts generados de este video
+        shorts = Short.query.filter_by(video_fuente_id=video_id).all()
+        
+        shorts_data = []
+        for short in shorts:
+            shorts_data.append({
+                'id': short.id,
+                'titulo': short.titulo,
+                'descripcion': short.descripcion,
+                'estado': short.estado,
+                'timestamp_inicio': short.timestamp_inicio,
+                'timestamp_fin': short.timestamp_fin,
+                'hook': short.hook,
+                'momento_viral': short.momento_viral
+            })
+        
+        return jsonify({
+            'success': True,
+            'video_info': video_info,
+            'shorts': shorts_data,
+            'total_shorts': len(shorts_data)
+        })
+        
+    except Exception as e:
+        print(f"❌ Error obteniendo detalles: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def get_video_detailed_info(video_id):
+    """Obtener información detallada del video desde YouTube API"""
+    try:
+        params = {
+            'key': app.config['YOUTUBE_API_KEY'],
+            'part': 'snippet,statistics,contentDetails',
+            'id': video_id
+        }
+        
+        response = requests.get('https://www.googleapis.com/youtube/v3/videos', params=params)
+        data = response.json()
+        
+        if 'items' not in data or not data['items']:
+            return None
+            
+        item = data['items'][0]
+        
+        return {
+            'id': video_id,
+            'title': item['snippet']['title'],
+            'description': item['snippet']['description'],
+            'channel': item['snippet']['channelTitle'],
+            'duration': item['contentDetails']['duration'],
+            'views': int(item['statistics'].get('viewCount', 0)),
+            'likes': int(item['statistics'].get('likeCount', 0)),
+            'comments': int(item['statistics'].get('commentCount', 0)),
+            'published_at': item['snippet']['publishedAt'],
+            'thumbnail': item['snippet']['thumbnails']['high']['url'],
+            'url': f"https://youtube.com/watch?v={video_id}"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error obteniendo detalles del video: {e}")
+        return None
+
+def analyze_video_content_with_ai(video_info):
+    """Analizar contenido del video con IA para encontrar momentos virales"""
+    try:
+        # Preparar prompt para IA
+        prompt = f"""
+Analiza este video viral de YouTube y identifica los momentos más virales para crear shorts:
+
+TÍTULO: {video_info['title']}
+CANAL: {video_info['channel']}
+VIEWS: {video_info['views']:,}
+DESCRIPCIÓN: {video_info['description'][:500]}...
+
+Tu tarea es identificar 3 momentos virales específicos que serían perfectos para shorts de 60 segundos.
+
+Para cada momento, proporciona:
+1. TIMESTAMP estimado (ej: "05:30")
+2. HOOK viral (primera frase que enganche)
+3. MOMENTO VIRAL (descripción del contenido)
+4. RAZÓN (por qué sería viral)
+5. TÍTULO sugerido para el short
+6. DESCRIPCIÓN sugerida
+
+Formato JSON:
+{{
+  "momentos_virales": [
+    {{
+      "timestamp": "05:30",
+      "hook": "La regla que te hará millonario en 5 años...",
+      "momento": "Explica la regla del 50/30/20",
+      "razon": "Consejo financiero concreto y aplicable",
+      "titulo": "La REGLA FINANCIERA que cambiará tu vida",
+      "descripcion": "Descubre el secreto que usan los millonarios para gestionar su dinero ✨ #finanzas #dinero #shorts"
+    }}
+  ],
+  "resumen_general": "Video sobre...",
+  "nicho": "finanzas",
+  "potencial_viral": 85
+}}
+        """
+        
+        # Usar OpenAI o Claude según disponibilidad
+        if app.config['OPENAI_API_KEY']:
+            analysis = analyze_with_openai(prompt)
+        elif anthropic_client:
+            analysis = analyze_with_claude(prompt)
+        else:
+            # Fallback: análisis básico sin IA
+            analysis = create_basic_analysis(video_info)
+            
+        return analysis
+        
+    except Exception as e:
+        print(f"❌ Error en análisis con IA: {e}")
+        return create_basic_analysis(video_info)
+
+def analyze_with_openai(prompt):
+    """Análisis con OpenAI"""
+    try:
+        import openai
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Eres un experto en contenido viral de YouTube y creación de shorts. Siempre respondes en JSON válido."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1000,
+            temperature=0.7
+        )
+        
+        result = response.choices[0].message.content
+        return json.loads(result)
+        
+    except Exception as e:
+        print(f"❌ Error con OpenAI: {e}")
+        raise
+
+def analyze_with_claude(prompt):
+    """Análisis con Claude"""
+    try:
+        response = anthropic_client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=1000,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        result = response.content[0].text
+        return json.loads(result)
+        
+    except Exception as e:
+        print(f"❌ Error con Claude: {e}")
+        raise
+
+def create_basic_analysis(video_info):
+    """Análisis básico sin IA como fallback"""
+    return {
+        "momentos_virales": [
+            {
+                "timestamp": "02:00",
+                "hook": f"Lo que dice {video_info['channel']} te sorprenderá...",
+                "momento": "Momento clave del inicio del video",
+                "razon": "Alto engagement según las métricas",
+                "titulo": video_info['title'][:50] + " - Parte 1",
+                "descripcion": f"Clip viral de {video_info['channel']} ✨ #viral #shorts"
+            },
+            {
+                "timestamp": "10:30",
+                "hook": "La parte más importante viene ahora...",
+                "momento": "Contenido principal del video",
+                "razon": "Información valiosa concentrada",
+                "titulo": video_info['title'][:50] + " - Parte 2",
+                "descripcion": f"No te pierdas esto de {video_info['channel']} 🔥 #viral #shorts"
+            },
+            {
+                "timestamp": "18:45",
+                "hook": "Esto cambiará tu perspectiva para siempre...",
+                "momento": "Conclusión impactante",
+                "razon": "Final sorprendente o revelador",
+                "titulo": video_info['title'][:50] + " - Parte 3",
+                "descripcion": f"La conclusión más impactante 💥 #viral #shorts"
+            }
+        ],
+        "resumen_general": f"Análisis básico de {video_info['title']}",
+        "nicho": "general",
+        "potencial_viral": 70
+    }
+
+def generate_shorts_from_analysis(video_id, video_title, analysis_data):
+    """Generar shorts en la base de datos basados en el análisis"""
+    try:
+        shorts_generated = []
+        
+        for i, momento in enumerate(analysis_data['momentos_virales'], 1):
+            # Crear nuevo short en la base de datos
+            nuevo_short = Short(
+                titulo=momento['titulo'],
+                descripcion=momento['descripcion'],
+                tema=analysis_data.get('nicho', 'general'),
+                estado='investigacion',
+                video_fuente_id=video_id,
+                video_fuente_titulo=video_title,
+                url_fuente=f"https://youtube.com/watch?v={video_id}",
+                timestamp_inicio=momento['timestamp'],
+                timestamp_fin=calculate_end_timestamp(momento['timestamp']),
+                hook=momento['hook'],
+                momento_viral=momento['momento'],
+                razon_viral=momento['razon'],
+                vph_fuente=0,  # Se puede calcular después
+                usuario_id=current_user.id,
+                fecha_creacion=datetime.utcnow()
+            )
+            
+            db.session.add(nuevo_short)
+            shorts_generated.append({
+                'titulo': nuevo_short.titulo,
+                'hook': nuevo_short.hook,
+                'timestamp': nuevo_short.timestamp_inicio,
+                'momento': nuevo_short.momento_viral
+            })
+        
+        db.session.commit()
+        
+        print(f"✅ Generados {len(shorts_generated)} shorts para video {video_id}")
+        return shorts_generated
+        
+    except Exception as e:
+        print(f"❌ Error generando shorts: {e}")
+        db.session.rollback()
+        return []
+
+def calculate_end_timestamp(start_timestamp):
+    """Calcular timestamp final (60 segundos después)"""
+    try:
+        # Parse timestamp "MM:SS" or "HH:MM:SS"
+        parts = start_timestamp.split(':')
+        if len(parts) == 2:  # MM:SS
+            minutes, seconds = map(int, parts)
+            total_seconds = minutes * 60 + seconds
+        elif len(parts) == 3:  # HH:MM:SS
+            hours, minutes, seconds = map(int, parts)
+            total_seconds = hours * 3600 + minutes * 60 + seconds
+        else:
+            total_seconds = 0
+            
+        # Añadir 60 segundos
+        end_seconds = total_seconds + 60
+        
+        # Convertir de vuelta a formato
+        hours = end_seconds // 3600
+        minutes = (end_seconds % 3600) // 60
+        seconds = end_seconds % 60
+        
+        if hours > 0:
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        else:
+            return f"{minutes:02d}:{seconds:02d}"
+            
+    except:
+        return "01:00"  # Fallback
+
+@app.route('/crear-semana-con-shorts')
+@login_required
+def crear_semana_con_shorts():
+    """Crear semana automáticamente con shorts no asignados"""
+    try:
+        # Obtener shorts no asignados a semanas
+        shorts_disponibles = Short.query.filter_by(semana_id=None).order_by(Short.fecha_creacion.desc()).all()
+        
+        if len(shorts_disponibles) < 21:
+            flash(f'Solo hay {len(shorts_disponibles)} shorts disponibles. Se necesitan al menos 21 para una semana completa.', 'warning')
+            return redirect(url_for('video_discovery'))
+        
+        # Crear nueva semana
+        nueva_semana = crear_semana_actual()
+        
+        # Asignar shorts a la semana (3 por día)
+        dias_semana = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
+        short_index = 0
+        
+        for dia_num, dia_nombre in enumerate(dias_semana):
+            fecha_dia = nueva_semana.fecha_inicio + timedelta(days=dia_num)
+            
+            # Asignar 3 shorts por día
+            for orden in range(1, 4):  # 1, 2, 3
+                if short_index < len(shorts_disponibles) and short_index < 21:
+                    short = shorts_disponibles[short_index]
+                    
+                    # Asignar short a la semana
+                    short.semana_id = nueva_semana.id
+                    short.dia_publicacion = fecha_dia
+                    short.dia_nombre = dia_nombre
+                    short.orden_dia = orden
+                    
+                    short_index += 1
+        
+        db.session.commit()
+        
+        flash(f'✅ Semana creada exitosamente con {short_index} shorts asignados!', 'success')
+        return redirect(url_for('old_dashboard', semana_id=nueva_semana.id))
+        
+    except Exception as e:
+        print(f"❌ Error creando semana con shorts: {e}")
+        db.session.rollback()
+        flash(f'Error creando semana: {e}', 'error')
+        return redirect(url_for('video_discovery'))
 
 @app.route('/nueva_semana')
 @login_required

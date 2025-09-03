@@ -288,14 +288,280 @@ function displayVideoResults(videos) {
     `);
 }
 
-async function analyzeVideo(videoId) {
-    // Implementar análisis individual
-    console.log('Analizando video:', videoId);
+async function analyzeVideo(videoId, videoTitle) {
+    try {
+        const button = document.querySelector(`button[onclick="analyzeVideo('${videoId}', '${videoTitle}')"]`);
+        const originalText = button.innerHTML;
+        
+        button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Analizando...';
+        button.disabled = true;
+        
+        const response = await fetch('/api/analyze-video', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                video_id: videoId,
+                video_title: videoTitle
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            button.innerHTML = '<i class="fas fa-check me-1"></i>Analizado';
+            button.classList.remove('btn-outline-primary');
+            button.classList.add('btn-success');
+            
+            // Mostrar resultados del análisis
+            showAnalysisResults(videoId, data.analysis);
+            
+            // Habilitar botón de generar shorts
+            const generateBtn = document.querySelector(`button[onclick="generateShorts('${videoId}', '${videoTitle}')"]`);
+            generateBtn.classList.remove('btn-outline-success');
+            generateBtn.classList.add('btn-warning');
+            generateBtn.innerHTML = '<i class="fas fa-magic me-1"></i>¡Generar Shorts!';
+            
+        } else {
+            throw new Error(data.error);
+        }
+        
+    } catch (error) {
+        console.error('Error:', error);
+        button.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>Error';
+        button.classList.add('btn-danger');
+        alert('Error analizando video: ' + error.message);
+    }
 }
 
-async function generateShorts(videoId) {
-    // Implementar generación individual
-    console.log('Generando shorts para video:', videoId);
+async function generateShorts(videoId, videoTitle) {
+    try {
+        const button = document.querySelector(`button[onclick="generateShorts('${videoId}', '${videoTitle}')"]`);
+        const originalText = button.innerHTML;
+        
+        button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Generando...';
+        button.disabled = true;
+        
+        const response = await fetch('/api/generate-shorts', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                video_id: videoId,
+                video_title: videoTitle
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            button.innerHTML = `<i class="fas fa-check me-1"></i>${data.shorts_generated} Shorts Creados`;
+            button.classList.remove('btn-outline-success', 'btn-warning');
+            button.classList.add('btn-success');
+            
+            // Mostrar shorts generados
+            showShortsGenerated(videoId, data.shorts);
+            
+            // Actualizar contador global
+            updateShortsCounter(data.shorts_generated);
+            
+        } else {
+            throw new Error(data.error);
+        }
+        
+    } catch (error) {
+        console.error('Error:', error);
+        button.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>Error';
+        button.classList.add('btn-danger');
+        alert('Error generando shorts: ' + error.message);
+    }
+}
+
+async function viewDetails(videoId) {
+    try {
+        const response = await fetch(`/api/video-details/${videoId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            showVideoDetailsModal(data.video_info, data.shorts);
+        } else {
+            throw new Error(data.error);
+        }
+        
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error cargando detalles: ' + error.message);
+    }
+}
+
+function showAnalysisResults(videoId, analysis) {
+    const videoItem = document.querySelector(`[data-video-id="${videoId}"]`);
+    
+    // Añadir panel de análisis
+    const analysisPanel = document.createElement('div');
+    analysisPanel.className = 'mt-3 p-3 bg-light rounded';
+    analysisPanel.innerHTML = `
+        <h6><i class="fas fa-brain me-2"></i>Análisis IA Completado</h6>
+        <div class="row">
+            <div class="col-md-6">
+                <strong>Nicho:</strong> ${analysis.nicho}<br>
+                <strong>Potencial Viral:</strong> ${analysis.potencial_viral}%
+            </div>
+            <div class="col-md-6">
+                <strong>Momentos Virales:</strong> ${analysis.momentos_virales.length}<br>
+                <strong>Estado:</strong> <span class="badge bg-success">Listo para generar</span>
+            </div>
+        </div>
+        <div class="mt-2">
+            <small class="text-muted">${analysis.resumen_general}</small>
+        </div>
+    `;
+    
+    videoItem.appendChild(analysisPanel);
+}
+
+function showShortsGenerated(videoId, shorts) {
+    const videoItem = document.querySelector(`[data-video-id="${videoId}"]`);
+    
+    // Añadir panel de shorts generados
+    const shortsPanel = document.createElement('div');
+    shortsPanel.className = 'mt-3 p-3 bg-success bg-opacity-10 rounded border border-success';
+    shortsPanel.innerHTML = `
+        <h6><i class="fas fa-cut me-2"></i>Shorts Generados (${shorts.length})</h6>
+        ${shorts.map((short, index) => `
+            <div class="mb-2 p-2 bg-white rounded">
+                <strong>Short #${index + 1}:</strong> ${short.titulo}<br>
+                <small class="text-muted">
+                    <i class="fas fa-clock me-1"></i>${short.timestamp}
+                    <i class="fas fa-quote-left ms-2 me-1"></i>${short.hook.substring(0, 50)}...
+                </small>
+            </div>
+        `).join('')}
+        <div class="mt-2">
+            <button class="btn btn-sm btn-primary me-2" onclick="viewDetails('${videoId}')">
+                <i class="fas fa-eye me-1"></i>Ver Todos los Detalles
+            </button>
+            <button class="btn btn-sm btn-success" onclick="createWeekWithShorts()">
+                <i class="fas fa-calendar-plus me-1"></i>Crear Semana
+            </button>
+        </div>
+    `;
+    
+    videoItem.appendChild(shortsPanel);
+}
+
+function showVideoDetailsModal(videoInfo, shorts) {
+    // Crear modal con detalles completos
+    const modalHtml = `
+        <div class="modal fade" id="videoDetailsModal" tabindex="-1">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="fab fa-youtube me-2"></i>
+                            ${videoInfo.title}
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <img src="${videoInfo.thumbnail}" class="img-fluid rounded mb-3">
+                                <h6>Información del Video</h6>
+                                <p><strong>Canal:</strong> ${videoInfo.channel}</p>
+                                <p><strong>Views:</strong> ${videoInfo.views.toLocaleString()}</p>
+                                <p><strong>Likes:</strong> ${videoInfo.likes.toLocaleString()}</p>
+                                <p><strong>Duración:</strong> ${videoInfo.duration}</p>
+                                <a href="${videoInfo.url}" target="_blank" class="btn btn-danger btn-sm">
+                                    <i class="fab fa-youtube me-1"></i>Ver en YouTube
+                                </a>
+                            </div>
+                            <div class="col-md-8">
+                                <h6>Shorts Generados (${shorts.length})</h6>
+                                ${shorts.length > 0 ? shorts.map(short => `
+                                    <div class="card mb-3">
+                                        <div class="card-body">
+                                            <h6 class="card-title">${short.titulo}</h6>
+                                            <p class="card-text">${short.descripcion}</p>
+                                            <div class="row">
+                                                <div class="col-md-6">
+                                                    <small><strong>Timestamp:</strong> ${short.timestamp_inicio} - ${short.timestamp_fin}</small><br>
+                                                    <small><strong>Estado:</strong> <span class="badge bg-info">${short.estado}</span></small>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <small><strong>Hook:</strong> ${short.hook}</small>
+                                                </div>
+                                            </div>
+                                            <div class="mt-2">
+                                                <small class="text-muted">${short.momento_viral}</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('') : '<p class="text-muted">No hay shorts generados aún</p>'}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                        ${shorts.length > 0 ? '<button type="button" class="btn btn-success" onclick="createWeekWithShorts()">Crear Semana con estos Shorts</button>' : ''}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Añadir modal al DOM y mostrarlo
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const modal = new bootstrap.Modal(document.getElementById('videoDetailsModal'));
+    modal.show();
+    
+    // Limpiar modal cuando se cierre
+    document.getElementById('videoDetailsModal').addEventListener('hidden.bs.modal', function() {
+        this.remove();
+    });
+}
+
+let totalShortsGenerated = 0;
+
+function updateShortsCounter(count) {
+    totalShortsGenerated += count;
+    
+    if (totalShortsGenerated >= 21) {
+        showCreateWeekNotification();
+    }
+}
+
+function showCreateWeekNotification() {
+    if (document.getElementById('weekNotification')) return; // Ya existe
+    
+    const notification = document.createElement('div');
+    notification.id = 'weekNotification';
+    notification.className = 'alert alert-success alert-dismissible position-fixed';
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        <strong><i class="fas fa-party-horn me-2"></i>¡Semana Completa!</strong><br>
+        Has generado ${totalShortsGenerated} shorts. ¡Perfecto para una semana completa!
+        <button type="button" class="btn btn-sm btn-success ms-2" onclick="createWeekWithShorts()">
+            <i class="fas fa-calendar-plus me-1"></i>Crear Semana
+        </button>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-hide después de 10 segundos
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 10000);
+}
+
+function createWeekWithShorts() {
+    // Redirigir a creación de semana con shorts generados
+    window.location.href = '/crear-semana-con-shorts';
 }
 </script>
 
