@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}Descubrimiento Viral - Shorts Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card bg-gradient-primary text-white">
+                <div class="card-body">
+                    <h1 class="mb-0"><i class="fas fa-rocket me-3"></i>Descubrimiento de Videos Virales</h1>
+                    <p class="mb-0 opacity-8">Encuentra videos con alto potencial viral y genera shorts automáticamente</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Búsqueda de Videos -->
+    <div class="row">
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5><i class="fas fa-search me-2"></i>Buscar Videos</h5>
+                </div>
+                <div class="card-body">
+                    <form id="searchForm">
+                        <div class="mb-3">
+                            <label class="form-label">Nicho</label>
+                            <select class="form-select" id="nicho" name="nicho">
+                                <option value="finanzas">💰 Finanzas Personales</option>
+                                <option value="tecnologia">💻 Tecnología</option>
+                                <option value="negocios">📊 Negocios</option>
+                                <option value="salud">🏃 Salud y Fitness</option>
+                                <option value="educacion">📚 Educación</option>
+                                <option value="motivacion">🎯 Motivación</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Período</label>
+                            <select class="form-select" id="periodo" name="periodo">
+                                <option value="1">📅 Último día</option>
+                                <option value="3" selected>📅 Últimos 3 días</option>
+                                <option value="7">📅 Última semana</option>
+                                <option value="30">📅 Último mes</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">VPH Mínimo</label>
+                            <input type="number" class="form-control" id="vph_minimo" name="vph_minimo" value="100" min="10">
+                            <small class="form-text text-muted">Views Per Hour mínimo para considerar viral</small>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label">Cantidad de videos</label>
+                            <select class="form-select" id="cantidad" name="cantidad">
+                                <option value="10">10 videos</option>
+                                <option value="21" selected>21 videos (para semana completa)</option>
+                                <option value="50">50 videos</option>
+                                <option value="100">100 videos</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 mb-3">
+                            <i class="fas fa-search me-2"></i>Buscar Videos Virales
+                        </button>
+                    </form>
+
+                    <div id="searchStatus" class="alert alert-info d-none">
+                        <i class="fas fa-spinner fa-spin me-2"></i>Buscando videos virales...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Resultados -->
+        <div class="col-lg-8">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-video me-2"></i>Videos Encontrados</h5>
+                    <div>
+                        <button id="analyzeAllBtn" class="btn btn-warning btn-sm d-none">
+                            <i class="fas fa-magic me-1"></i>Analizar Todos con IA
+                        </button>
+                        <button id="generateShortsBtn" class="btn btn-success btn-sm d-none">
+                            <i class="fas fa-cut me-1"></i>Generar Shorts Automáticamente
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div id="videoResults">
+                        <div class="p-4 text-center text-muted">
+                            <i class="fas fa-search fa-3x mb-3 opacity-25"></i>
+                            <h5>Busca videos para comenzar</h5>
+                            <p>Usa los filtros de la izquierda para encontrar videos virales</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Videos Analizados -->
+    <div class="row mt-4 d-none" id="analyzedSection">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-brain me-2"></i>Videos Analizados con IA</h5>
+                    <button id="createWeekBtn" class="btn btn-primary">
+                        <i class="fas fa-calendar-plus me-1"></i>Crear Semana con estos Shorts
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    <div id="analyzedResults"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script>
+let currentVideos = [];
+let analyzedShorts = [];
+
+document.getElementById('searchForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const searchStatus = document.getElementById('searchStatus');
+    const videoResults = document.getElementById('videoResults');
+    
+    searchStatus.classList.remove('d-none');
+    
+    try {
+        const response = await fetch('/api/search-viral-videos', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        currentVideos = data.videos;
+        
+        displayVideoResults(data.videos);
+        document.getElementById('analyzeAllBtn').classList.remove('d-none');
+        
+    } catch (error) {
+        console.error('Error:', error);
+        videoResults.innerHTML = '<div class="p-4 text-danger">Error buscando videos</div>';
+    }
+    
+    searchStatus.classList.add('d-none');
+});
+
+function displayVideoResults(videos) {
+    const container = document.getElementById('videoResults');
+    
+    if (videos.length === 0) {
+        container.innerHTML = '<div class="p-4 text-muted text-center">No se encontraron videos</div>';
+        return;
+    }
+    
+    const html = videos.map(video => `
+        <div class="border-bottom p-3 video-item" data-video-id="${video.id}">
+            <div class="row align-items-center">
+                <div class="col-md-3">
+                    <img src="${video.thumbnail}" class="img-fluid rounded" alt="Thumbnail">
+                </div>
+                <div class="col-md-6">
+                    <h6 class="mb-1">${video.title}</h6>
+                    <small class="text-muted d-block">${video.channel}</small>
+                    <div class="mt-2">
+                        <span class="badge bg-success me-1">VPH: ${video.vph}</span>
+                        <span class="badge bg-info me-1">${video.views} views</span>
+                        <span class="badge bg-warning">${video.duration}</span>
+                    </div>
+                </div>
+                <div class="col-md-3 text-end">
+                    <button class="btn btn-outline-primary btn-sm mb-1" onclick="analyzeVideo('${video.id}')">
+                        <i class="fas fa-eye me-1"></i>Analizar
+                    </button>
+                    <br>
+                    <button class="btn btn-outline-success btn-sm" onclick="generateShorts('${video.id}')">
+                        <i class="fas fa-cut me-1"></i>Generar Shorts
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    container.innerHTML = html;
+}
+
+async function analyzeVideo(videoId) {
+    // Implementar análisis individual
+    console.log('Analizando video:', videoId);
+}
+
+async function generateShorts(videoId) {
+    // Implementar generación individual
+    console.log('Generando shorts para video:', videoId);
+}
+</script>
+
+<style>
+.video-item:hover {
+    background-color: #f8f9fa;
+}
+
+.bg-gradient-primary {
+    background: linear-gradient(45deg, #007bff, #6610f2);
+}
+</style>
+{% endblock %}

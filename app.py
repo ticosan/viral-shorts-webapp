@@ -85,6 +85,12 @@ def load_user(user_id):
 @app.route('/')
 @login_required
 def dashboard():
+    # Redirigir a la nueva interfaz de descubrimiento
+    return redirect(url_for('video_discovery'))
+
+@app.route('/old_dashboard')
+@login_required
+def old_dashboard():
     try:
         # Obtener semana específica o semana actual
         semana_id = request.args.get('semana_id')
@@ -142,7 +148,8 @@ def dashboard():
                              todas_semanas=todas_semanas,
                              shorts_por_dia=shorts_por_dia,
                              dias_orden=dias_orden,
-                             stats=stats)
+                             stats=stats,
+                             timedelta=timedelta)
     except Exception as e:
         print(f"❌ Error en dashboard: {e}")
         # En caso de error, mostrar dashboard básico
@@ -152,7 +159,143 @@ def dashboard():
                              shorts_por_dia={},
                              dias_orden=[],
                              stats={},
+                             timedelta=timedelta,
                              error_message=f"Error cargando dashboard: {e}")
+
+@app.route('/video_discovery')
+@login_required
+def video_discovery():
+    """Nueva interfaz principal - descubrimiento de videos virales"""
+    return render_template('video_discovery.html')
+
+@app.route('/api/search-viral-videos', methods=['POST'])
+@login_required
+def search_viral_videos():
+    """Buscar videos virales usando YouTube API"""
+    try:
+        nicho = request.form.get('nicho', 'finanzas')
+        periodo = int(request.form.get('periodo', '3'))
+        vph_minimo = int(request.form.get('vph_minimo', '100'))
+        cantidad = int(request.form.get('cantidad', '21'))
+        
+        # Mapeo de nichos a términos de búsqueda
+        nicho_queries = {
+            'finanzas': ['finanzas personales', 'inversiones', 'dinero', 'ahorro', 'criptomonedas'],
+            'tecnologia': ['tecnología', 'inteligencia artificial', 'programación', 'apps'],
+            'negocios': ['emprendimiento', 'negocios', 'marketing', 'ventas'],
+            'salud': ['fitness', 'ejercicio', 'nutrición', 'salud'],
+            'educacion': ['educación', 'aprender', 'estudiar', 'universidad'],
+            'motivacion': ['motivación', 'productividad', 'éxito', 'mentalidad']
+        }
+        
+        query_terms = nicho_queries.get(nicho, nicho_queries['finanzas'])
+        
+        videos_encontrados = []
+        
+        for query in query_terms[:2]:  # Usar solo 2 términos para no exceder límites
+            videos = buscar_videos_virales_youtube(query, periodo, vph_minimo, cantidad // 2)
+            videos_encontrados.extend(videos)
+            
+        # Ordenar por VPH y tomar los mejores
+        videos_encontrados.sort(key=lambda x: x.get('vph', 0), reverse=True)
+        videos_finales = videos_encontrados[:cantidad]
+        
+        return jsonify({
+            'success': True,
+            'videos': videos_finales,
+            'total': len(videos_finales)
+        })
+        
+    except Exception as e:
+        print(f"❌ Error buscando videos virales: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def buscar_videos_virales_youtube(query, dias=3, vph_minimo=100, max_resultados=10):
+    """Buscar videos usando YouTube Data API v3"""
+    try:
+        from datetime import datetime, timedelta
+        
+        # Fecha límite para filtrar videos recientes
+        fecha_limite = (datetime.utcnow() - timedelta(days=dias)).isoformat() + 'Z'
+        
+        # Parámetros de búsqueda optimizados para viralidad
+        params = {
+            'key': app.config['YOUTUBE_API_KEY'],
+            'part': 'snippet,statistics',
+            'q': query,
+            'type': 'video',
+            'order': 'relevance',  # Cambiar a relevance para mejores resultados
+            'publishedAfter': fecha_limite,
+            'videoDuration': 'long',  # Videos largos >20min
+            'maxResults': min(max_resultados, 50),
+            'regionCode': 'US',
+            'relevanceLanguage': 'es'
+        }
+        
+        response = requests.get('https://www.googleapis.com/youtube/v3/search', params=params)
+        data = response.json()
+        
+        if 'items' not in data:
+            print(f"⚠️ No se encontraron videos para: {query}")
+            return []
+        
+        videos_procesados = []
+        
+        for item in data['items']:
+            video_id = item['id']['videoId']
+            
+            # Obtener estadísticas detalladas
+            stats_params = {
+                'key': app.config['YOUTUBE_API_KEY'],
+                'part': 'statistics,contentDetails',
+                'id': video_id
+            }
+            
+            stats_response = requests.get('https://www.googleapis.com/youtube/v3/videos', params=stats_params)
+            stats_data = stats_response.json()
+            
+            if 'items' not in stats_data or not stats_data['items']:
+                continue
+                
+            stats = stats_data['items'][0]['statistics']
+            content = stats_data['items'][0]['contentDetails']
+            
+            # Calcular VPH (Views Per Hour)
+            views = int(stats.get('viewCount', 0))
+            published_at = datetime.fromisoformat(item['snippet']['publishedAt'].replace('Z', '+00:00'))
+            horas_transcurridas = (datetime.now().astimezone() - published_at).total_seconds() / 3600
+            
+            vph = views / max(horas_transcurridas, 1)
+            
+            # Filtrar por VPH mínimo
+            if vph < vph_minimo:
+                continue
+            
+            # Parsear duración
+            duration = content['duration']  # Formato PT#M#S
+            
+            video_info = {
+                'id': video_id,
+                'title': item['snippet']['title'],
+                'channel': item['snippet']['channelTitle'],
+                'thumbnail': item['snippet']['thumbnails']['medium']['url'],
+                'views': f"{views:,}",
+                'likes': int(stats.get('likeCount', 0)),
+                'comments': int(stats.get('commentCount', 0)),
+                'duration': duration,
+                'vph': int(vph),
+                'published_at': item['snippet']['publishedAt'],
+                'url': f"https://youtube.com/watch?v={video_id}",
+                'query_usado': query
+            }
+            
+            videos_procesados.append(video_info)
+        
+        return videos_procesados
+        
+    except Exception as e:
+        print(f"❌ Error en búsqueda YouTube: {e}")
+        return []
 
 @app.route('/nueva_semana')
 @login_required
