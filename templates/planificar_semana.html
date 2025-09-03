@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+
+{% block title %}Planificar Semana {{ semana.numero_semana }} - Viral Shorts Manager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-calendar-plus me-2"></i>Planificar Semana Completa</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle me-2"></i>Semana {{ semana.numero_semana }} - {{ semana.mes }} {{ semana.año }}</h6>
+                    <p class="mb-2">{{ semana.fecha_inicio.strftime('%d/%m') }} - {{ semana.fecha_fin.strftime('%d/%m/%Y') }}</p>
+                    <p class="mb-0"><strong>Objetivo:</strong> {{ semana.videos_objetivo }} videos (3 por día)</p>
+                </div>
+                
+                <form id="planificarForm">
+                    <input type="hidden" name="semana_id" value="{{ semana.id }}">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Nicho Principal</label>
+                        <select class="form-select" name="nicho" required>
+                            <option value="finanzas">💰 Finanzas Personales</option>
+                            <option value="emprendimiento">🚀 Emprendimiento</option>
+                            <option value="negocios">🏢 Negocios y Marketing</option>
+                            <option value="liderazgo">👨‍💼 Liderazgo</option>
+                            <option value="tecnologia">💻 Tecnología</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Criterios de Búsqueda</label>
+                        <div class="row">
+                            <div class="col-6">
+                                <select class="form-select mb-2" name="duracion">
+                                    <option value="long">Videos Largos (>20min)</option>
+                                    <option value="medium">Videos Medios (4-20min)</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <select class="form-select mb-2" name="dias_busqueda">
+                                    <option value="7">Últimos 7 días</option>
+                                    <option value="3">Últimos 3 días</option>
+                                    <option value="1">Últimas 24 horas</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <small>
+                            <i class="fas fa-exclamation-triangle me-1"></i>
+                            Esto creará automáticamente 21 shorts basados en los videos más virales encontrados.
+                        </small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-magic me-2"></i>Generar Planificación Automática
+                    </button>
+                </form>
+                
+                <hr>
+                
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-success" onclick="planificacionManual()">
+                        <i class="fas fa-hand-paper me-1"></i>Planificación Manual
+                    </button>
+                    <a href="{{ url_for('dashboard', semana_id=semana.id) }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i>Volver al Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Estado actual -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6><i class="fas fa-chart-pie me-2"></i>Estado Actual</h6>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="border rounded p-2">
+                            <small class="text-muted">Planificados</small><br>
+                            <strong id="countPlanificados">{{ semana.shorts|length }}</strong>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="border rounded p-2">
+                            <small class="text-muted">Restantes</small><br>
+                            <strong id="countRestantes">{{ semana.videos_objetivo - semana.shorts|length }}</strong>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="border rounded p-2">
+                            <small class="text-muted">Progreso</small><br>
+                            <strong id="progresoPorcentaje">{{ ((semana.shorts|length / semana.videos_objetivo) * 100)|round|int }}%</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-cogs me-2"></i>Proceso de Planificación</h5>
+            </div>
+            <div class="card-body">
+                <div id="loading" style="display:none;" class="text-center py-5">
+                    <div class="spinner-border text-primary mb-3" role="status"></div>
+                    <h5>Buscando Videos Virales...</h5>
+                    <p class="text-muted">Esto puede tardar 30-60 segundos</p>
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+                    </div>
+                </div>
+                
+                <div id="resultados" style="display:none;"></div>
+                
+                <div id="inicial" class="text-center py-5">
+                    <i class="fas fa-calendar-week fa-4x text-muted mb-3"></i>
+                    <h4>Planificación Automática de Semana</h4>
+                    <p class="text-muted">
+                        El sistema buscará los 21 videos más virales en tu nicho y creará automáticamente 
+                        la planificación completa de la semana con 3 shorts por día.
+                    </p>
+                    
+                    <div class="row mt-4">
+                        <div class="col-md-4">
+                            <div class="card border-primary">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-search fa-2x text-primary mb-2"></i>
+                                    <h6>Paso 1: Búsqueda</h6>
+                                    <small class="text-muted">Encuentra videos virales con alto VPH</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-success">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-calendar-alt fa-2x text-success mb-2"></i>
+                                    <h6>Paso 2: Asignación</h6>
+                                    <small class="text-muted">Distribuye 3 videos por cada día</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-warning">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-file-alt fa-2x text-warning mb-2"></i>
+                                    <h6>Paso 3: Scripts</h6>
+                                    <small class="text-muted">Genera guiones con IA automáticamente</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    $('#planificarForm').submit(function(e) {
+        e.preventDefault();
+        planificarSemanaAutomatica();
+    });
+});
+
+function planificarSemanaAutomatica() {
+    const formData = new FormData($('#planificarForm')[0]);
+    const data = Object.fromEntries(formData);
+    
+    $('#inicial').hide();
+    $('#resultados').hide();
+    $('#loading').show();
+    
+    $.ajax({
+        url: '/api/planificar_semana_automatica',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function(response) {
+            $('#loading').hide();
+            
+            if (response.success) {
+                mostrarResultadosExito(response);
+            } else {
+                mostrarError(response.error || 'Error desconocido');
+            }
+        },
+        error: function(xhr) {
+            $('#loading').hide();
+            const error = xhr.responseJSON?.error || 'Error de conexión';
+            mostrarError(error);
+        }
+    });
+}
+
+function mostrarResultadosExito(response) {
+    const html = `
+        <div class="alert alert-success">
+            <h5><i class="fas fa-check-circle me-2"></i>¡Semana Planificada Exitosamente!</h5>
+            <p class="mb-0">${response.mensaje}</p>
+        </div>
+        
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <h3>${response.shorts_creados}</h3>
+                        <small>Shorts Creados</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-info text-white">
+                    <div class="card-body text-center">
+                        <h3>${response.videos_encontrados}</h3>
+                        <small>Videos Encontrados</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-primary text-white">
+                    <div class="card-body text-center">
+                        <h3>100%</h3>
+                        <small>Planificación Completa</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="fas fa-list-check me-2"></i>Próximos Pasos</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    <div class="list-group-item d-flex align-items-center">
+                        <i class="fas fa-magic text-warning fa-2x me-3"></i>
+                        <div>
+                            <h6 class="mb-1">Generar Guiones con IA</h6>
+                            <small class="text-muted">Crear scripts automáticamente para todos los videos</small>
+                        </div>
+                        <a href="/generar_guiones_masivo?semana_id={{ semana.id }}" class="btn btn-warning ms-auto">Generar</a>
+                    </div>
+                    <div class="list-group-item d-flex align-items-center">
+                        <i class="fas fa-download text-info fa-2x me-3"></i>
+                        <div>
+                            <h6 class="mb-1">Descargar Videos Fuente</h6>
+                            <small class="text-muted">Obtener archivos para edición</small>
+                        </div>
+                        <button onclick="iniciarDescargas()" class="btn btn-info ms-auto">Descargar</button>
+                    </div>
+                    <div class="list-group-item d-flex align-items-center">
+                        <i class="fas fa-home text-success fa-2x me-3"></i>
+                        <div>
+                            <h6 class="mb-1">Ver Dashboard</h6>
+                            <small class="text-muted">Revisar la planificación completa</small>
+                        </div>
+                        <a href="{{ url_for('dashboard', semana_id=semana.id) }}" class="btn btn-success ms-auto">Dashboard</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    $('#resultados').html(html).show();
+    
+    // Actualizar contadores
+    $('#countPlanificados').text(response.shorts_creados);
+    $('#countRestantes').text(21 - response.shorts_creados);
+    $('#progresoPorcentaje').text(Math.round((response.shorts_creados / 21) * 100) + '%');
+}
+
+function mostrarError(error) {
+    const html = `
+        <div class="alert alert-danger">
+            <h5><i class="fas fa-exclamation-triangle me-2"></i>Error en Planificación</h5>
+            <p class="mb-2">${error}</p>
+            <button class="btn btn-outline-danger btn-sm" onclick="reintentar()">
+                <i class="fas fa-redo me-1"></i>Reintentar
+            </button>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="fas fa-lightbulb me-2"></i>Sugerencias</h6>
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li>Prueba con un nicho diferente</li>
+                    <li>Cambia el rango de días (últimos 3 días en lugar de 7)</li>
+                    <li>Verifica que la API de YouTube esté funcionando</li>
+                    <li>Realiza planificación manual día por día</li>
+                </ul>
+            </div>
+        </div>
+    `;
+    
+    $('#resultados').html(html).show();
+}
+
+function reintentar() {
+    $('#resultados').hide();
+    $('#inicial').show();
+}
+
+function planificacionManual() {
+    alert('Redirigiendo a planificación manual día por día...');
+    window.location.href = '/buscar_videos?modo=planificacion&semana_id={{ semana.id }}';
+}
+
+function iniciarDescargas() {
+    alert('Iniciando descarga de videos... (Funcionalidad próximamente)');
+}
+</script>
+{% endblock %}

@@ -819,6 +819,368 @@ def analizar_canal():
     except Exception as e:
         return jsonify({'error': f'Error: {str(e)}'}), 500
 
+@app.route('/planificar_semana')
+@login_required
+def planificar_semana():
+    semana_id = request.args.get('semana_id')
+    if not semana_id:
+        flash('ID de semana requerido', 'error')
+        return redirect(url_for('dashboard'))
+    
+    semana = Semana.query.get_or_404(semana_id)
+    return render_template('planificar_semana.html', semana=semana)
+
+@app.route('/api/planificar_semana_automatica', methods=['POST'])
+@login_required
+def planificar_semana_automatica():
+    data = request.json
+    semana_id = data.get('semana_id')
+    nicho_principal = data.get('nicho', 'finanzas')
+    
+    if not semana_id:
+        return jsonify({'error': 'ID de semana requerido'}), 400
+        
+    semana = Semana.query.get_or_404(semana_id)
+    
+    try:
+        # Configurar búsqueda por nicho
+        nichos_queries = {
+            'finanzas': 'financial advice money investing wealth',
+            'emprendimiento': 'entrepreneur business startup success',
+            'negocios': 'business strategy marketing sales',
+            'liderazgo': 'leadership management CEO motivation',
+            'tecnologia': 'technology innovation AI startup tech'
+        }
+        
+        query = nichos_queries.get(nicho_principal, 'success motivation')
+        
+        # Buscar videos virales para toda la semana
+        search_params = {
+            'part': 'snippet',
+            'q': query,
+            'type': 'video',
+            'videoDuration': 'long',
+            'publishedAfter': (datetime.utcnow() - timedelta(days=7)).isoformat() + 'Z',
+            'order': 'viewCount',
+            'maxResults': 50,  # Buscar más videos para tener opciones
+            'key': app.config['YOUTUBE_API_KEY']
+        }
+        
+        search_response = requests.get(
+            'https://www.googleapis.com/youtube/v3/search',
+            params=search_params
+        )
+        
+        if search_response.status_code != 200:
+            return jsonify({'error': 'Error en YouTube API'}), 500
+            
+        search_data = search_response.json()
+        video_ids = [item['id']['videoId'] for item in search_data['items']]
+        
+        # Obtener estadísticas detalladas
+        stats_params = {
+            'part': 'statistics,contentDetails',
+            'id': ','.join(video_ids),
+            'key': app.config['YOUTUBE_API_KEY']
+        }
+        
+        stats_response = requests.get(
+            'https://www.googleapis.com/youtube/v3/videos',
+            params=stats_params
+        )
+        
+        if stats_response.status_code != 200:
+            return jsonify({'error': 'Error obteniendo estadísticas'}), 500
+            
+        stats_data = stats_response.json()
+        
+        # Procesar videos y calcular VPH
+        videos_candidatos = []
+        
+        for i, item in enumerate(search_data['items']):
+            if i < len(stats_data['items']):
+                video_stats = stats_data['items'][i]
+                
+                view_count = int(video_stats['statistics'].get('viewCount', 0))
+                published_at = datetime.fromisoformat(item['snippet']['publishedAt'].replace('Z', '+00:00'))
+                hours_since_published = (datetime.now(published_at.tzinfo) - published_at).total_seconds() / 3600
+                vph = round(view_count / hours_since_published if hours_since_published > 0 else 0)
+                
+                # Filtrar solo videos con buen VPH
+                if vph >= 100:
+                    videos_candidatos.append({
+                        'video_id': item['id']['videoId'],
+                        'titulo': item['snippet']['title'],
+                        'canal': item['snippet']['channelTitle'],
+                        'publicado': item['snippet']['publishedAt'],
+                        'views': view_count,
+                        'vph': vph,
+                        'duracion': video_stats['contentDetails']['duration'],
+                        'url': f"https://www.youtube.com/watch?v={item['id']['videoId']}",
+                        'thumbnail': item['snippet']['thumbnails']['medium']['url']
+                    })
+        
+        # Ordenar por VPH y tomar los mejores
+        videos_candidatos.sort(key=lambda x: x['vph'], reverse=True)
+        videos_seleccionados = videos_candidatos[:21]  # 21 videos para la semana
+        
+        if len(videos_seleccionados) < 21:
+            return jsonify({'error': f'Solo se encontraron {len(videos_seleccionados)} videos, se necesitan 21'}), 400
+        
+        # Crear shorts para cada día
+        dias_orden = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
+        shorts_creados = 0
+        
+        for dia_idx, dia in enumerate(dias_orden):
+            fecha_publicacion = semana.fecha_inicio + timedelta(days=dia_idx)
+            
+            # Crear 3 shorts para este día
+            for orden in range(1, 4):
+                video_idx = dia_idx * 3 + (orden - 1)
+                if video_idx < len(videos_seleccionados):
+                    video = videos_seleccionados[video_idx]
+                    
+                    # Verificar si ya existe un short para este día y orden
+                    short_existente = Short.query.filter_by(
+                        semana_id=semana.id,
+                        dia_nombre=dia,
+                        orden_dia=orden
+                    ).first()
+                    
+                    if not short_existente:
+                        nuevo_short = Short(
+                            semana_id=semana.id,
+                            dia_publicacion=fecha_publicacion,
+                            dia_nombre=dia,
+                            orden_dia=orden,
+                            titulo=video['titulo'],
+                            tema=nicho_principal,
+                            estado='investigacion',
+                            video_fuente_url=video['url'],
+                            video_fuente_id=video['video_id'],
+                            vph_fuente=video['vph']
+                        )
+                        db.session.add(nuevo_short)
+                        shorts_creados += 1
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'shorts_creados': shorts_creados,
+            'videos_encontrados': len(videos_candidatos),
+            'mensaje': f'Semana planificada con {shorts_creados} shorts basados en videos virales'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Error: {str(e)}'}), 500
+
+@app.route('/planificar_dia')
+@login_required
+def planificar_dia():
+    dia = request.args.get('dia')
+    fecha = request.args.get('fecha')
+    semana_id = request.args.get('semana_id')
+    
+    if not all([dia, fecha, semana_id]):
+        flash('Parámetros requeridos faltantes', 'error')
+        return redirect(url_for('dashboard'))
+    
+    return render_template('planificar_dia.html', dia=dia, fecha=fecha, semana_id=semana_id)
+
+@app.route('/generar_guiones_masivo')
+@login_required
+def generar_guiones_masivo():
+    semana_id = request.args.get('semana_id')
+    if not semana_id:
+        flash('ID de semana requerido', 'error')
+        return redirect(url_for('dashboard'))
+    
+    semana = Semana.query.get_or_404(semana_id)
+    return render_template('generar_guiones_masivo.html', semana=semana)
+
+@app.route('/api/generar_guiones_semana', methods=['POST'])
+@login_required
+def generar_guiones_semana():
+    data = request.json
+    semana_id = data.get('semana_id')
+    
+    if not semana_id:
+        return jsonify({'error': 'ID de semana requerido'}), 400
+        
+    semana = Semana.query.get_or_404(semana_id)
+    
+    try:
+        # Obtener shorts sin guión generado
+        shorts_pendientes = Short.query.filter(
+            Short.semana_id == semana.id,
+            Short.estado == 'investigacion'
+        ).all()
+        
+        if not shorts_pendientes:
+            return jsonify({'error': 'No hay shorts pendientes de generar guiones'}), 400
+        
+        guiones_generados = 0
+        errores = []
+        
+        for short in shorts_pendientes:
+            try:
+                # Templates base según el tema
+                templates_tema = {
+                    'finanzas': {
+                        'hook': f'🚨 ERROR Financiero que ARRUINA tu futuro',
+                        'estructura': '[0-5s] Hook impactante → [5-45s] Clip + 3 overlays → [45-60s] Tu análisis + CTA',
+                        'overlays': ['❌ "ERROR: No consideran esto"', '⚠️ "RIESGO: Para ciertos casos"', '✅ "MEJOR: Alternativa real"'],
+                        'cta': 'Sígueme para más consejos que cambiarán tu vida financiera'
+                    },
+                    'emprendimiento': {
+                        'hook': f'🚀 SECRETO de Emprendedor que cambió TODO',
+                        'estructura': '[0-5s] Hook viral → [5-45s] Historia + insights → [45-60s] Lección práctica',
+                        'overlays': ['💡 "INSIGHT: Esto es clave"', '📈 "RESULTADO: Impacto real"', '🎯 "APLICA: Tu siguiente paso"'],
+                        'cta': 'Sígueme para estrategias de emprendimiento real'
+                    }
+                }
+                
+                template = templates_tema.get(short.tema, templates_tema['finanzas'])
+                
+                if app.config['OPENAI_API_KEY']:
+                    client = openai.OpenAI(api_key=app.config['OPENAI_API_KEY'])
+                    
+                    prompt = f"""
+                    Crea un guión detallado para un short viral de 60 segundos:
+                    
+                    VIDEO FUENTE: {short.video_fuente_url}
+                    TÍTULO: {short.titulo}
+                    TEMA: {short.tema}
+                    VPH: {short.vph_fuente}
+                    
+                    ESTRUCTURA REQUERIDA:
+                    {template['estructura']}
+                    
+                    FORMATO REQUERIDO:
+                    1. Hook específico (5 segundos)
+                    2. Guión palabra por palabra con timestamps
+                    3. 3 overlays personalizados con timing exacto
+                    4. Conclusión viral
+                    5. CTA optimizado
+                    
+                    Genera un JSON estructurado con timestamps precisos.
+                    """
+                    
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=1200
+                    )
+                    
+                    guion_generado = response.choices[0].message.content
+                    
+                elif anthropic_client:
+                    prompt = f"""
+                    Genera un guión completo para short viral:
+                    
+                    Video: {short.video_fuente_url}
+                    Título: {short.titulo}
+                    Tema: {short.tema}
+                    Duración: 60 segundos
+                    
+                    Incluye:
+                    - Hook impactante (0-5s)
+                    - Contenido principal (5-45s) 
+                    - Conclusión + CTA (45-60s)
+                    - 3 overlays con timing específico
+                    
+                    Respuesta en formato JSON estructurado.
+                    """
+                    
+                    message = anthropic_client.messages.create(
+                        model="claude-3-sonnet-20240229",
+                        max_tokens=1200,
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+                    
+                    guion_generado = message.content[0].text
+                    
+                else:
+                    # Template básico sin IA
+                    guion_generado = json.dumps({
+                        'hook': template['hook'],
+                        'estructura': template['estructura'],
+                        'overlays': template['overlays'],
+                        'cta': template['cta'],
+                        'video_fuente': short.video_fuente_url,
+                        'titulo': short.titulo,
+                        'tema': short.tema
+                    })
+                
+                # Actualizar short con guión generado
+                short.guion_generado = guion_generado
+                short.estado = 'guion_generado'
+                guiones_generados += 1
+                
+            except Exception as e:
+                errores.append(f'Error en {short.dia_nombre} #{short.orden_dia}: {str(e)}')
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'guiones_generados': guiones_generados,
+            'errores': errores,
+            'mensaje': f'Generados {guiones_generados} guiones. {len(errores)} errores.'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Error: {str(e)}'}), 500
+
+@app.route('/api/descargar_videos_masivo', methods=['POST'])
+@login_required
+def descargar_videos_masivo():
+    data = request.json
+    semana_id = data.get('semana_id')
+    
+    if not semana_id:
+        return jsonify({'error': 'ID de semana requerido'}), 400
+        
+    try:
+        # Obtener shorts con guión pero sin video descargado
+        shorts_pendientes = Short.query.filter(
+            Short.semana_id == semana_id,
+            Short.video_descargado == False,
+            Short.video_fuente_id != None
+        ).all()
+        
+        if not shorts_pendientes:
+            return jsonify({'error': 'No hay videos pendientes de descargar'}), 400
+        
+        videos_descargados = 0
+        
+        # Simular descarga (en producción usarías yt-dlp o similar)
+        for short in shorts_pendientes:
+            try:
+                # Aquí implementarías la descarga real con yt-dlp
+                # Por ahora solo marcamos como descargado
+                short.video_descargado = True
+                videos_descargados += 1
+                
+                # Opcional: actualizar estado a en_proceso si ya tiene guión
+                if short.guion_generado:
+                    short.estado = 'en_proceso'
+                    
+            except Exception as e:
+                continue
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'videos_descargados': videos_descargados,
+            'mensaje': f'{videos_descargados} videos marcados como descargados'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Error: {str(e)}'}), 500
+
 def init_db():
     with app.app_context():
         db.create_all()

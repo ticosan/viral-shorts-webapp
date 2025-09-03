@@ -1,0 +1,397 @@
+{% extends "base.html" %}
+
+{% block title %}Generar Guiones Masivo - Semana {{ semana.numero_semana }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-magic me-2"></i>Generación Masiva de Guiones</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle me-2"></i>Semana {{ semana.numero_semana }} - {{ semana.mes }} {{ semana.año }}</h6>
+                    <p class="mb-2">{{ semana.fecha_inicio.strftime('%d/%m') }} - {{ semana.fecha_fin.strftime('%d/%m/%Y') }}</p>
+                </div>
+                
+                <form id="generarGuionesForm">
+                    <input type="hidden" name="semana_id" value="{{ semana.id }}">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Motor de IA</label>
+                        <div class="row">
+                            <div class="col-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="motor_ia" value="openai" id="openai" checked>
+                                    <label class="form-check-label" for="openai">
+                                        OpenAI GPT
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="motor_ia" value="claude" id="claude">
+                                    <label class="form-check-label" for="claude">
+                                        Claude AI
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <small class="text-muted">Si no hay APIs configuradas, se usarán templates básicos</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Configuración de Guiones</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="incluir_timestamps" id="timestamps" checked>
+                            <label class="form-check-label" for="timestamps">
+                                Incluir timestamps detallados
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="incluir_overlays" id="overlays" checked>
+                            <label class="form-check-label" for="overlays">
+                                Generar overlays personalizados
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="incluir_cta" id="cta" checked>
+                            <label class="form-check-label" for="cta">
+                                CTAs optimizados por tema
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <small>
+                            <i class="fas fa-clock me-1"></i>
+                            Este proceso puede tardar 2-5 minutos dependiendo de la cantidad de shorts.
+                        </small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-magic me-2"></i>Generar Todos los Guiones
+                    </button>
+                </form>
+                
+                <hr>
+                
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-info" onclick="previsualizarGuion()">
+                        <i class="fas fa-eye me-1"></i>Previsualizar Uno
+                    </button>
+                    <a href="{{ url_for('dashboard', semana_id=semana.id) }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i>Volver al Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Estado de los shorts -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6><i class="fas fa-chart-pie me-2"></i>Estado de Shorts</h6>
+            </div>
+            <div class="card-body">
+                {% set shorts_investigacion = semana.shorts|selectattr('estado', 'equalto', 'investigacion')|list %}
+                {% set shorts_guion = semana.shorts|selectattr('estado', 'equalto', 'guion_generado')|list %}
+                {% set shorts_proceso = semana.shorts|selectattr('estado', 'equalto', 'en_proceso')|list %}
+                {% set shorts_completos = semana.shorts|selectattr('estado', 'equalto', 'completado')|list %}
+                
+                <div class="row text-center">
+                    <div class="col-6">
+                        <div class="border rounded p-2 bg-info text-white">
+                            <small>Sin Guión</small><br>
+                            <strong id="countSinGuion">{{ shorts_investigacion|length }}</strong>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-2 bg-success text-white">
+                            <small>Con Guión</small><br>
+                            <strong id="countConGuion">{{ (shorts_guion|length + shorts_proceso|length + shorts_completos|length) }}</strong>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="progress mt-2">
+                    {% set progreso = ((shorts_guion|length + shorts_proceso|length + shorts_completos|length) / semana.shorts|length * 100) if semana.shorts|length > 0 else 0 %}
+                    <div class="progress-bar bg-success" style="width: {{ progreso }}%"></div>
+                </div>
+                <small class="text-muted">{{ progreso|round|int }}% guiones generados</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-robot me-2"></i>Proceso de Generación</h5>
+            </div>
+            <div class="card-body">
+                <div id="loading" style="display:none;" class="text-center py-5">
+                    <div class="spinner-border text-primary mb-3" role="status"></div>
+                    <h5>Generando Guiones con IA...</h5>
+                    <p class="text-muted" id="progreso-texto">Procesando shorts...</p>
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" id="progreso-barra" style="width: 0%"></div>
+                    </div>
+                </div>
+                
+                <div id="resultados" style="display:none;"></div>
+                
+                <div id="inicial">
+                    <div class="text-center py-4">
+                        <i class="fas fa-file-alt fa-4x text-muted mb-3"></i>
+                        <h4>Generación Automática de Guiones</h4>
+                        <p class="text-muted">
+                            El sistema generará automáticamente guiones profesionales para todos los shorts 
+                            de la semana usando IA avanzada.
+                        </p>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="card border-primary">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-brain fa-2x text-primary mb-2"></i>
+                                    <h6>IA Personalizada</h6>
+                                    <small class="text-muted">Cada guión adaptado al video fuente y tema</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-success">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-clock fa-2x text-success mb-2"></i>
+                                    <h6>Timestamps Precisos</h6>
+                                    <small class="text-muted">Estructura de 60 segundos optimizada</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-warning">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-fire fa-2x text-warning mb-2"></i>
+                                    <h6>Hooks Virales</h6>
+                                    <small class="text-muted">Aperturas diseñadas para retener</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h6><i class="fas fa-list-ul me-2"></i>¿Qué se Genera Automáticamente?</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <ul class="list-unstyled">
+                                        <li><i class="fas fa-check text-success me-2"></i>Hook impactante (0-5s)</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Estructura completa (60s)</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>3 overlays con timing</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <ul class="list-unstyled">
+                                        <li><i class="fas fa-check text-success me-2"></i>Conclusión viral</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>CTA optimizado</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Formato producción listo</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    $('#generarGuionesForm').submit(function(e) {
+        e.preventDefault();
+        generarGuionesMasivo();
+    });
+});
+
+function generarGuionesMasivo() {
+    const formData = new FormData($('#generarGuionesForm')[0]);
+    const data = Object.fromEntries(formData);
+    
+    $('#inicial').hide();
+    $('#resultados').hide();
+    $('#loading').show();
+    
+    // Simular progreso
+    let progreso = 0;
+    const interval = setInterval(() => {
+        progreso += Math.random() * 15;
+        if (progreso > 90) progreso = 90;
+        $('#progreso-barra').css('width', progreso + '%');
+        $('#progreso-texto').text(`Generando guiones... ${Math.round(progreso)}%`);
+    }, 500);
+    
+    $.ajax({
+        url: '/api/generar_guiones_semana',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function(response) {
+            clearInterval(interval);
+            $('#progreso-barra').css('width', '100%');
+            $('#progreso-texto').text('¡Completado!');
+            
+            setTimeout(() => {
+                $('#loading').hide();
+                if (response.success) {
+                    mostrarResultadosExito(response);
+                } else {
+                    mostrarError(response.error || 'Error desconocido');
+                }
+            }, 1000);
+        },
+        error: function(xhr) {
+            clearInterval(interval);
+            $('#loading').hide();
+            const error = xhr.responseJSON?.error || 'Error de conexión';
+            mostrarError(error);
+        }
+    });
+}
+
+function mostrarResultadosExito(response) {
+    const html = `
+        <div class="alert alert-success">
+            <h5><i class="fas fa-check-circle me-2"></i>¡Guiones Generados Exitosamente!</h5>
+            <p class="mb-0">${response.mensaje}</p>
+        </div>
+        
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <h3>${response.guiones_generados}</h3>
+                        <small>Guiones Creados</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-warning text-white">
+                    <div class="card-body text-center">
+                        <h3>${response.errores.length}</h3>
+                        <small>Errores</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-primary text-white">
+                    <div class="card-body text-center">
+                        <h3>100%</h3>
+                        <small>Procesado</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        ${response.errores.length > 0 ? `
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6><i class="fas fa-exclamation-triangle text-warning me-2"></i>Errores Encontrados</h6>
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    ${response.errores.map(error => `<li>${error}</li>`).join('')}
+                </ul>
+            </div>
+        </div>
+        ` : ''}
+        
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="fas fa-list-check me-2"></i>Próximos Pasos</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    <div class="list-group-item d-flex align-items-center">
+                        <i class="fas fa-download text-info fa-2x me-3"></i>
+                        <div>
+                            <h6 class="mb-1">Descargar Videos Fuente</h6>
+                            <small class="text-muted">Obtener archivos para edición</small>
+                        </div>
+                        <button onclick="iniciarDescargas()" class="btn btn-info ms-auto">Descargar</button>
+                    </div>
+                    <div class="list-group-item d-flex align-items-center">
+                        <i class="fas fa-edit text-warning fa-2x me-3"></i>
+                        <div>
+                            <h6 class="mb-1">Revisar Guiones</h6>
+                            <small class="text-muted">Personalizar scripts antes de producir</small>
+                        </div>
+                        <a href="{{ url_for('dashboard', semana_id=semana.id) }}" class="btn btn-warning ms-auto">Revisar</a>
+                    </div>
+                    <div class="list-group-item d-flex align-items-center">
+                        <i class="fas fa-play text-success fa-2x me-3"></i>
+                        <div>
+                            <h6 class="mb-1">Comenzar Producción</h6>
+                            <small class="text-muted">Empezar a crear los shorts</small>
+                        </div>
+                        <a href="{{ url_for('dashboard', semana_id=semana.id) }}" class="btn btn-success ms-auto">Producir</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    $('#resultados').html(html).show();
+    
+    // Actualizar contadores
+    $('#countSinGuion').text({{ semana.shorts|selectattr('estado', 'equalto', 'investigacion')|list|length }} - response.guiones_generados);
+    $('#countConGuion').text(parseInt($('#countConGuion').text()) + response.guiones_generados);
+}
+
+function mostrarError(error) {
+    const html = `
+        <div class="alert alert-danger">
+            <h5><i class="fas fa-exclamation-triangle me-2"></i>Error en Generación</h5>
+            <p class="mb-2">${error}</p>
+            <button class="btn btn-outline-danger btn-sm" onclick="reintentar()">
+                <i class="fas fa-redo me-1"></i>Reintentar
+            </button>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="fas fa-lightbulb me-2"></i>Sugerencias</h6>
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li>Verifica que tengas shorts en estado "Investigación"</li>
+                    <li>Configura las APIs de OpenAI o Claude</li>
+                    <li>Prueba generando un guión individual primero</li>
+                    <li>Contacta soporte si el problema persiste</li>
+                </ul>
+            </div>
+        </div>
+    `;
+    
+    $('#resultados').html(html).show();
+}
+
+function reintentar() {
+    $('#resultados').hide();
+    $('#inicial').show();
+}
+
+function previsualizarGuion() {
+    window.open('/buscar_videos', '_blank');
+}
+
+function iniciarDescargas() {
+    window.location.href = '/descargar_videos?semana_id={{ semana.id }}';
+}
+</script>
+{% endblock %}
