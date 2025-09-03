@@ -1,0 +1,678 @@
+{% extends "base.html" %}
+
+{% block title %}Gestionar Pendientes - Semana {{ semana.numero_semana }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-exclamation-triangle me-2"></i>Gestión de Pendientes</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle me-2"></i>Semana {{ semana.numero_semana }} - {{ semana.mes }} {{ semana.año }}</h6>
+                    <p class="mb-2">{{ semana.fecha_inicio.strftime('%d/%m') }} - {{ semana.fecha_fin.strftime('%d/%m/%Y') }}</p>
+                </div>
+                
+                <button class="btn btn-primary w-100 mb-3" onclick="analizarPendientes()">
+                    <i class="fas fa-search me-2"></i>Analizar Estado Actual
+                </button>
+                
+                <div class="d-grid gap-2">
+                    <button class="btn btn-warning" onclick="mostrarReasignacion()">
+                        <i class="fas fa-exchange-alt me-1"></i>Reasignar Videos
+                    </button>
+                    <button class="btn btn-success" onclick="generarBackup()">
+                        <i class="fas fa-plus-circle me-1"></i>Videos Backup
+                    </button>
+                    <button class="btn btn-info" onclick="exportarReporte()">
+                        <i class="fas fa-file-export me-1"></i>Exportar Reporte
+                    </button>
+                </div>
+                
+                <hr>
+                
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('dashboard', semana_id=semana.id) }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i>Volver al Dashboard
+                    </a>
+                    <a href="/nueva_semana" class="btn btn-outline-primary">
+                        <i class="fas fa-calendar-plus me-1"></i>Crear Nueva Semana
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Acciones rápidas -->
+        <div class="card mt-3" id="accionesRapidas" style="display:none;">
+            <div class="card-header">
+                <h6><i class="fas fa-bolt me-2"></i>Acciones Rápidas</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-sm btn-outline-danger" onclick="cancelarCriticos()">
+                        <i class="fas fa-times me-1"></i>Cancelar Críticos
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning" onclick="priorizarUrgentes()">
+                        <i class="fas fa-arrow-up me-1"></i>Priorizar Urgentes
+                    </button>
+                    <button class="btn btn-sm btn-outline-info" onclick="moverTodosProximaSemana()">
+                        <i class="fas fa-calendar-week me-1"></i>Mover Pendientes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-analytics me-2"></i>Análisis de Estado</h5>
+            </div>
+            <div class="card-body">
+                <div id="loading" style="display:none;" class="text-center py-5">
+                    <div class="spinner-border text-primary mb-3" role="status"></div>
+                    <h5>Analizando Estado de la Semana...</h5>
+                    <p class="text-muted">Identificando videos pendientes y críticos</p>
+                </div>
+                
+                <div id="resultados" style="display:none;"></div>
+                
+                <div id="inicial">
+                    <div class="text-center py-4">
+                        <i class="fas fa-clipboard-list fa-4x text-muted mb-3"></i>
+                        <h4>Gestión Inteligente de Pendientes</h4>
+                        <p class="text-muted">
+                            Analiza videos no completados, identifica críticos en retraso y proporciona 
+                            recomendaciones automáticas para optimizar tu flujo de producción.
+                        </p>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="card border-danger">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-clock fa-2x text-danger mb-2"></i>
+                                    <h6>Detección Críticos</h6>
+                                    <small class="text-muted">Videos con +3 días de retraso</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-warning">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-exchange-alt fa-2x text-warning mb-2"></i>
+                                    <h6>Reasignación</h6>
+                                    <small class="text-muted">Mover a próximas semanas</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-success">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-lightbulb fa-2x text-success mb-2"></i>
+                                    <h6>Recomendaciones</h6>
+                                    <small class="text-muted">IA sugiere mejores acciones</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Reasignación -->
+<div class="modal fade" id="reasignacionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-exchange-alt me-2"></i>Reasignar Videos Seleccionados</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="videosSeleccionados"></div>
+                
+                <form id="reasignacionForm">
+                    <div class="mb-3">
+                        <label class="form-label">Acción a Realizar</label>
+                        <select class="form-select" name="accion" id="accionSelect" required>
+                            <option value="">Seleccionar acción...</option>
+                            <option value="mover_semana">Mover a próxima semana</option>
+                            <option value="priorizar">Priorizar para producción</option>
+                            <option value="cancelar">Cancelar definitivamente</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3" id="semanaDestinoDiv" style="display:none;">
+                        <label class="form-label">Semana Destino</label>
+                        <select class="form-select" name="semana_destino" id="semanaDestino">
+                            <option value="">Crear nueva semana automáticamente</option>
+                        </select>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <small id="descripcionAccion">Selecciona una acción para ver los detalles.</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="ejecutarReasignacion()">
+                    <i class="fas fa-check me-1"></i>Ejecutar Acción
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Videos Backup -->
+<div class="modal fade" id="backupModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-plus-circle me-2"></i>Generar Videos Backup</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="backupForm">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Cantidad</label>
+                                <select class="form-select" name="cantidad">
+                                    <option value="3">3 videos backup</option>
+                                    <option value="5" selected>5 videos backup</option>
+                                    <option value="10">10 videos backup</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Nicho</label>
+                                <select class="form-select" name="nicho">
+                                    <option value="finanzas">Finanzas</option>
+                                    <option value="emprendimiento">Emprendimiento</option>
+                                    <option value="negocios">Negocios</option>
+                                    <option value="liderazgo">Liderazgo</option>
+                                    <option value="tecnologia">Tecnología</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Los videos backup serán alternativas con criterios más flexibles para reemplazar videos problemáticos.
+                    </div>
+                </form>
+                
+                <div id="backupResultados"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-success" onclick="buscarBackup()">
+                    <i class="fas fa-search me-1"></i>Buscar Backup
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let datosAnalisis = null;
+let videosSeleccionados = [];
+
+function analizarPendientes() {
+    $('#inicial').hide();
+    $('#resultados').hide();
+    $('#loading').show();
+    
+    $.ajax({
+        url: '/api/analizar_semana_pendientes',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ semana_id: {{ semana.id }} }),
+        success: function(response) {
+            $('#loading').hide();
+            
+            if (response.success) {
+                datosAnalisis = response;
+                mostrarAnalisis(response);
+                $('#accionesRapidas').show();
+            } else {
+                mostrarError(response.error || 'Error en análisis');
+            }
+        },
+        error: function(xhr) {
+            $('#loading').hide();
+            const error = xhr.responseJSON?.error || 'Error de conexión';
+            mostrarError(error);
+        }
+    });
+}
+
+function mostrarAnalisis(data) {
+    const stats = data.estadisticas;
+    const criticos = data.shorts_criticos;
+    const recomendaciones = data.recomendaciones;
+    
+    let html = `
+        <!-- Estadísticas Generales -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body text-center">
+                        <h3>${stats.completados}</h3>
+                        <small>Completados</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body text-center">
+                        <h3>${stats.en_proceso + stats.con_guion}</h3>
+                        <small>En Progreso</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-danger text-white">
+                    <div class="card-body text-center">
+                        <h3>${criticos.length}</h3>
+                        <small>Críticos (+3 días)</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body text-center">
+                        <h3>${stats.tasa_completado}%</h3>
+                        <small>Tasa Completado</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Recomendaciones
+    if (recomendaciones.length > 0) {
+        html += `
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6><i class="fas fa-lightbulb me-2"></i>Recomendaciones IA</h6>
+                </div>
+                <div class="card-body">
+        `;
+        
+        recomendaciones.forEach(rec => {
+            const iconClass = rec.tipo === 'critico' ? 'fa-exclamation-triangle text-danger' : 
+                            rec.tipo === 'warning' ? 'fa-exclamation-circle text-warning' :
+                            rec.tipo === 'success' ? 'fa-check-circle text-success' : 'fa-info-circle text-info';
+            
+            html += `
+                <div class="alert alert-${rec.tipo === 'critico' ? 'danger' : rec.tipo === 'warning' ? 'warning' : rec.tipo === 'success' ? 'success' : 'info'}">
+                    <i class="fas ${iconClass} me-2"></i>
+                    <strong>${rec.titulo}</strong><br>
+                    <small>${rec.descripcion}</small>
+                </div>
+            `;
+        });
+        
+        html += `
+                </div>
+            </div>
+        `;
+    }
+    
+    // Videos críticos
+    if (criticos.length > 0) {
+        html += `
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6><i class="fas fa-clock me-2"></i>Videos Críticos (${criticos.length})</h6>
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="seleccionarTodosCriticos()">Seleccionar Todos</button>
+                        <button class="btn btn-sm btn-warning" onclick="mostrarReasignacion()" disabled id="btnReasignar">Reasignar</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th width="40"><input type="checkbox" id="selectAllCriticos"></th>
+                                    <th>Video</th>
+                                    <th>Estado</th>
+                                    <th>Días Retraso</th>
+                                    <th>VPH</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+        `;
+        
+        criticos.forEach(critico => {
+            html += `
+                <tr>
+                    <td><input type="checkbox" class="video-checkbox" value="${critico.id}"></td>
+                    <td>
+                        <strong>${critico.dia.charAt(0).toUpperCase() + critico.dia.slice(1)} #${critico.orden}</strong><br>
+                        <small class="text-truncate" style="max-width: 200px; display: block;">${critico.titulo}</small>
+                    </td>
+                    <td><span class="badge bg-secondary">${critico.estado.replace('_', ' ')}</span></td>
+                    <td><span class="badge bg-danger">${critico.dias_retraso} días</span></td>
+                    <td>${critico.vph_fuente}</td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Análisis por día
+    html += `
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="fas fa-calendar-week me-2"></i>Análisis por Día</h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+    `;
+    
+    const diasOrden = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+    diasOrden.forEach(dia => {
+        const datosDia = data.analisis_por_dia[dia];
+        if (datosDia) {
+            const progreso = datosDia.total > 0 ? (datosDia.completados / datosDia.total * 100) : 0;
+            
+            html += `
+                <div class="col-md-3 mb-3">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h6>${dia.charAt(0).toUpperCase() + dia.slice(1)}</h6>
+                            <div class="progress mb-2">
+                                <div class="progress-bar ${progreso === 100 ? 'bg-success' : progreso > 66 ? 'bg-info' : progreso > 33 ? 'bg-warning' : 'bg-danger'}" 
+                                     style="width: ${progreso}%"></div>
+                            </div>
+                            <small>${datosDia.completados}/${datosDia.total} completados</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    });
+    
+    html += `
+                </div>
+            </div>
+        </div>
+    `;
+    
+    $('#resultados').html(html).show();
+    
+    // Event listeners
+    setupEventListeners();
+}
+
+function setupEventListeners() {
+    // Checkbox select all
+    $('#selectAllCriticos').change(function() {
+        $('.video-checkbox').prop('checked', this.checked);
+        actualizarSeleccion();
+    });
+    
+    // Individual checkboxes
+    $('.video-checkbox').change(function() {
+        actualizarSeleccion();
+    });
+    
+    $('#accionSelect').change(function() {
+        const accion = $(this).val();
+        let descripcion = '';
+        
+        if (accion === 'mover_semana') {
+            descripcion = 'Los videos seleccionados se moverán a la próxima semana disponible.';
+            $('#semanaDestinoDiv').show();
+        } else if (accion === 'priorizar') {
+            descripcion = 'Los videos se marcarán como prioritarios y avanzarán en el flujo de producción.';
+            $('#semanaDestinoDiv').hide();
+        } else if (accion === 'cancelar') {
+            descripcion = 'Los videos se cancelarán definitivamente y no se producirán.';
+            $('#semanaDestinoDiv').hide();
+        } else {
+            $('#semanaDestinoDiv').hide();
+        }
+        
+        $('#descripcionAccion').text(descripcion);
+    });
+}
+
+function actualizarSeleccion() {
+    videosSeleccionados = $('.video-checkbox:checked').map(function() {
+        return parseInt($(this).val());
+    }).get();
+    
+    $('#btnReasignar').prop('disabled', videosSeleccionados.length === 0);
+}
+
+function seleccionarTodosCriticos() {
+    $('.video-checkbox').prop('checked', true);
+    actualizarSeleccion();
+}
+
+function mostrarReasignacion() {
+    if (videosSeleccionados.length === 0) {
+        alert('Selecciona videos primero');
+        return;
+    }
+    
+    let html = `<p>Videos seleccionados: <strong>${videosSeleccionados.length}</strong></p>`;
+    $('#videosSeleccionados').html(html);
+    $('#reasignacionModal').modal('show');
+}
+
+function ejecutarReasignacion() {
+    const accion = $('#accionSelect').val();
+    if (!accion) {
+        alert('Selecciona una acción');
+        return;
+    }
+    
+    const data = {
+        accion: accion,
+        shorts_ids: videosSeleccionados,
+        semana_destino_id: $('#semanaDestino').val() || null
+    };
+    
+    $.ajax({
+        url: '/api/reasignar_shorts',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function(response) {
+            if (response.success) {
+                alert(`${response.procesados} videos procesados. ${response.errores.length} errores.`);
+                $('#reasignacionModal').modal('hide');
+                analizarPendientes(); // Refresh
+            } else {
+                alert('Error: ' + (response.error || 'Error desconocido'));
+            }
+        },
+        error: function() {
+            alert('Error de conexión');
+        }
+    });
+}
+
+function generarBackup() {
+    $('#backupModal').modal('show');
+}
+
+function buscarBackup() {
+    const formData = new FormData($('#backupForm')[0]);
+    const data = Object.fromEntries(formData);
+    data.semana_id = {{ semana.id }};
+    
+    $.ajax({
+        url: '/api/generar_videos_backup',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function(response) {
+            if (response.success) {
+                let html = `
+                    <div class="alert alert-success">
+                        <strong>¡${response.cantidad_encontrados} videos backup encontrados!</strong>
+                    </div>
+                    <div class="row">
+                `;
+                
+                response.videos_backup.forEach(video => {
+                    html += `
+                        <div class="col-md-6 mb-2">
+                            <div class="card">
+                                <div class="card-body p-2">
+                                    <h6 class="text-truncate">${video.titulo}</h6>
+                                    <small class="text-muted">${video.canal} • ${video.vph} VPH</small><br>
+                                    <a href="${video.url}" target="_blank" class="btn btn-sm btn-outline-primary">Ver</a>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += '</div>';
+                $('#backupResultados').html(html);
+            } else {
+                $('#backupResultados').html(`<div class="alert alert-danger">${response.error}</div>`);
+            }
+        },
+        error: function() {
+            $('#backupResultados').html('<div class="alert alert-danger">Error de conexión</div>');
+        }
+    });
+}
+
+function mostrarError(error) {
+    $('#resultados').html(`
+        <div class="alert alert-danger">
+            <h5><i class="fas fa-exclamation-triangle me-2"></i>Error en Análisis</h5>
+            <p>${error}</p>
+            <button class="btn btn-outline-danger btn-sm" onclick="analizarPendientes()">Reintentar</button>
+        </div>
+    `).show();
+}
+
+function cancelarCriticos() {
+    if (!datosAnalisis) return;
+    
+    const criticos = datosAnalisis.shorts_criticos.map(s => s.id);
+    if (criticos.length === 0) {
+        alert('No hay videos críticos para cancelar');
+        return;
+    }
+    
+    if (confirm(`¿Cancelar ${criticos.length} videos críticos?`)) {
+        const data = {
+            accion: 'cancelar',
+            shorts_ids: criticos
+        };
+        
+        $.ajax({
+            url: '/api/reasignar_shorts',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(data),
+            success: function(response) {
+                alert(`${response.procesados} videos cancelados`);
+                analizarPendientes();
+            }
+        });
+    }
+}
+
+function priorizarUrgentes() {
+    if (!datosAnalisis) return;
+    
+    const urgentes = datosAnalisis.shorts_criticos.slice(0, 3).map(s => s.id);
+    if (urgentes.length === 0) {
+        alert('No hay videos urgentes para priorizar');
+        return;
+    }
+    
+    const data = {
+        accion: 'priorizar',
+        shorts_ids: urgentes
+    };
+    
+    $.ajax({
+        url: '/api/reasignar_shorts',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function(response) {
+            alert(`${response.procesados} videos priorizados`);
+            analizarPendientes();
+        }
+    });
+}
+
+function moverTodosProximaSemana() {
+    if (!datosAnalisis) return;
+    
+    const pendientes = datosAnalisis.shorts_criticos.map(s => s.id);
+    if (pendientes.length === 0) {
+        alert('No hay videos pendientes para mover');
+        return;
+    }
+    
+    if (confirm(`¿Mover ${pendientes.length} videos pendientes a la próxima semana?`)) {
+        const data = {
+            accion: 'mover_semana',
+            shorts_ids: pendientes
+        };
+        
+        $.ajax({
+            url: '/api/reasignar_shorts',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(data),
+            success: function(response) {
+                alert(`${response.procesados} videos movidos`);
+                analizarPendientes();
+            }
+        });
+    }
+}
+
+function exportarReporte() {
+    if (!datosAnalisis) {
+        alert('Realiza un análisis primero');
+        return;
+    }
+    
+    // Crear CSV simple
+    let csv = 'Video,Estado,Días Retraso,VPH\n';
+    datosAnalisis.shorts_criticos.forEach(s => {
+        csv += `"${s.dia} #${s.orden} - ${s.titulo}","${s.estado}","${s.dias_retraso}","${s.vph_fuente}"\n`;
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pendientes_semana_${{{ semana.id }}}.csv`;
+    a.click();
+}
+</script>
+{% endblock %}

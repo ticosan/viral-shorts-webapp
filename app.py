@@ -1181,6 +1181,306 @@ def descargar_videos_masivo():
     except Exception as e:
         return jsonify({'error': f'Error: {str(e)}'}), 500
 
+@app.route('/gestionar_pendientes')
+@login_required
+def gestionar_pendientes():
+    semana_id = request.args.get('semana_id')
+    if not semana_id:
+        flash('ID de semana requerido', 'error')
+        return redirect(url_for('dashboard'))
+    
+    semana = Semana.query.get_or_404(semana_id)
+    return render_template('gestionar_pendientes.html', semana=semana)
+
+@app.route('/api/analizar_semana_pendientes', methods=['POST'])
+@login_required
+def analizar_semana_pendientes():
+    data = request.json
+    semana_id = data.get('semana_id')
+    
+    if not semana_id:
+        return jsonify({'error': 'ID de semana requerido'}), 400
+        
+    semana = Semana.query.get_or_404(semana_id)
+    
+    try:
+        # Obtener todos los shorts de la semana
+        todos_shorts = Short.query.filter_by(semana_id=semana.id).all()
+        
+        # Clasificar por estado
+        completados = [s for s in todos_shorts if s.estado == 'completado']
+        en_proceso = [s for s in todos_shorts if s.estado == 'en_proceso']
+        con_guion = [s for s in todos_shorts if s.estado == 'guion_generado']
+        investigacion = [s for s in todos_shorts if s.estado == 'investigacion']
+        
+        # Identificar problemas por día
+        dias_orden = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
+        analisis_por_dia = {}
+        
+        for dia in dias_orden:
+            shorts_dia = [s for s in todos_shorts if s.dia_nombre == dia]
+            
+            analisis_por_dia[dia] = {
+                'total': len(shorts_dia),
+                'completados': len([s for s in shorts_dia if s.estado == 'completado']),
+                'pendientes': len([s for s in shorts_dia if s.estado != 'completado']),
+                'shorts': [{
+                    'id': s.id,
+                    'orden': s.orden_dia,
+                    'titulo': s.titulo,
+                    'estado': s.estado,
+                    'vph_fuente': s.vph_fuente,
+                    'dias_desde_creacion': (datetime.now().date() - s.dia_publicacion).days if s.dia_publicacion else 0
+                } for s in shorts_dia]
+            }
+        
+        # Calcular estadísticas generales
+        total_shorts = len(todos_shorts)
+        tasa_completado = (len(completados) / total_shorts * 100) if total_shorts > 0 else 0
+        
+        # Identificar shorts críticos (más de 3 días sin avance)
+        shorts_criticos = []
+        for short in todos_shorts:
+            if short.estado != 'completado' and short.dia_publicacion:
+                dias_retraso = (datetime.now().date() - short.dia_publicacion).days
+                if dias_retraso > 3:
+                    shorts_criticos.append({
+                        'id': short.id,
+                        'titulo': short.titulo,
+                        'dia': short.dia_nombre,
+                        'orden': short.orden_dia,
+                        'estado': short.estado,
+                        'dias_retraso': dias_retraso,
+                        'vph_fuente': short.vph_fuente
+                    })
+        
+        return jsonify({
+            'success': True,
+            'estadisticas': {
+                'total_shorts': total_shorts,
+                'completados': len(completados),
+                'en_proceso': len(en_proceso),
+                'con_guion': len(con_guion),
+                'investigacion': len(investigacion),
+                'tasa_completado': round(tasa_completado, 1)
+            },
+            'analisis_por_dia': analisis_por_dia,
+            'shorts_criticos': sorted(shorts_criticos, key=lambda x: x['dias_retraso'], reverse=True),
+            'recomendaciones': generar_recomendaciones(semana, shorts_criticos, tasa_completado)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Error: {str(e)}'}), 500
+
+@app.route('/api/reasignar_shorts', methods=['POST'])
+@login_required
+def reasignar_shorts():
+    data = request.json
+    accion = data.get('accion')  # 'mover_semana', 'cancelar', 'priorizar'
+    shorts_ids = data.get('shorts_ids', [])
+    semana_destino_id = data.get('semana_destino_id')
+    
+    if not accion or not shorts_ids:
+        return jsonify({'error': 'Acción y shorts requeridos'}), 400
+    
+    try:
+        shorts_afectados = Short.query.filter(Short.id.in_(shorts_ids)).all()
+        resultado = {'success': True, 'procesados': 0, 'errores': []}
+        
+        for short in shorts_afectados:
+            try:
+                if accion == 'mover_semana' and semana_destino_id:
+                    semana_destino = Semana.query.get(semana_destino_id)
+                    if semana_destino:
+                        # Encontrar el próximo slot disponible en la nueva semana
+                        dias_orden = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
+                        slot_encontrado = False
+                        
+                        for dia_idx, dia in enumerate(dias_orden):
+                            for orden in range(1, 4):  # 3 slots por día
+                                slot_ocupado = Short.query.filter_by(
+                                    semana_id=semana_destino.id,
+                                    dia_nombre=dia,
+                                    orden_dia=orden
+                                ).first()
+                                
+                                if not slot_ocupado:
+                                    # Mover short a este slot
+                                    short.semana_id = semana_destino.id
+                                    short.dia_nombre = dia
+                                    short.orden_dia = orden
+                                    short.dia_publicacion = semana_destino.fecha_inicio + timedelta(days=dia_idx)
+                                    short.estado = 'investigacion'  # Reiniciar estado
+                                    slot_encontrado = True
+                                    break
+                            if slot_encontrado:
+                                break
+                        
+                        if not slot_encontrado:
+                            resultado['errores'].append(f'No hay slots disponibles para {short.titulo}')
+                            continue
+                            
+                elif accion == 'cancelar':
+                    short.estado = 'cancelado'
+                    short.notas = (short.notas or '') + f'\n[{datetime.now().strftime("%d/%m/%Y")}] Cancelado por gestión de pendientes'
+                    
+                elif accion == 'priorizar':
+                    # Marcar como prioritario y mover al inicio de la cola
+                    if short.estado == 'investigacion':
+                        short.estado = 'guion_generado'  # Saltar a siguiente etapa
+                    short.notas = (short.notas or '') + f'\n[{datetime.now().strftime("%d/%m/%Y")}] Priorizado'
+                
+                resultado['procesados'] += 1
+                
+            except Exception as e:
+                resultado['errores'].append(f'Error con {short.titulo}: {str(e)}')
+        
+        db.session.commit()
+        
+        return jsonify(resultado)
+        
+    except Exception as e:
+        return jsonify({'error': f'Error: {str(e)}'}), 500
+
+@app.route('/api/generar_videos_backup', methods=['POST'])
+@login_required
+def generar_videos_backup():
+    data = request.json
+    semana_id = data.get('semana_id')
+    cantidad = data.get('cantidad', 5)  # Videos backup por defecto
+    nicho = data.get('nicho', 'finanzas')
+    
+    if not semana_id:
+        return jsonify({'error': 'ID de semana requerido'}), 400
+        
+    try:
+        semana = Semana.query.get_or_404(semana_id)
+        
+        # Buscar videos adicionales con diferentes criterios
+        nichos_queries = {
+            'finanzas': 'financial mistakes money advice investing tips',
+            'emprendimiento': 'startup entrepreneur business failure success',
+            'negocios': 'business marketing strategy leadership',
+            'liderazgo': 'leadership CEO management skills',
+            'tecnologia': 'technology AI innovation startup tech'
+        }
+        
+        query = nichos_queries.get(nicho, 'success motivation')
+        
+        # Buscar videos con criterios más amplios para backups
+        search_params = {
+            'part': 'snippet',
+            'q': query,
+            'type': 'video',
+            'videoDuration': 'medium',  # Videos medios para más opciones
+            'publishedAfter': (datetime.utcnow() - timedelta(days=14)).isoformat() + 'Z',  # 2 semanas
+            'order': 'relevance',  # Cambiar criterio
+            'maxResults': cantidad * 2,  # Buscar más para filtrar
+            'key': app.config['YOUTUBE_API_KEY']
+        }
+        
+        search_response = requests.get(
+            'https://www.googleapis.com/youtube/v3/search',
+            params=search_params
+        )
+        
+        if search_response.status_code != 200:
+            return jsonify({'error': 'Error en YouTube API'}), 500
+            
+        search_data = search_response.json()
+        video_ids = [item['id']['videoId'] for item in search_data['items']]
+        
+        # Obtener estadísticas
+        stats_params = {
+            'part': 'statistics,contentDetails',
+            'id': ','.join(video_ids),
+            'key': app.config['YOUTUBE_API_KEY']
+        }
+        
+        stats_response = requests.get(
+            'https://www.googleapis.com/youtube/v3/videos',
+            params=stats_params
+        )
+        
+        if stats_response.status_code != 200:
+            return jsonify({'error': 'Error obteniendo estadísticas'}), 500
+            
+        stats_data = stats_response.json()
+        
+        # Procesar y filtrar videos backup
+        videos_backup = []
+        
+        for i, item in enumerate(search_data['items']):
+            if i < len(stats_data['items']) and len(videos_backup) < cantidad:
+                video_stats = stats_data['items'][i]
+                
+                view_count = int(video_stats['statistics'].get('viewCount', 0))
+                published_at = datetime.fromisoformat(item['snippet']['publishedAt'].replace('Z', '+00:00'))
+                hours_since_published = (datetime.now(published_at.tzinfo) - published_at).total_seconds() / 3600
+                vph = round(view_count / hours_since_published if hours_since_published > 0 else 0)
+                
+                # Criterios más flexibles para backups
+                if vph >= 50:  # Menor VPH para backups
+                    videos_backup.append({
+                        'video_id': item['id']['videoId'],
+                        'titulo': item['snippet']['title'],
+                        'canal': item['snippet']['channelTitle'],
+                        'views': view_count,
+                        'vph': vph,
+                        'url': f"https://www.youtube.com/watch?v={item['id']['videoId']}",
+                        'thumbnail': item['snippet']['thumbnails']['medium']['url'],
+                        'tipo': 'backup'
+                    })
+        
+        return jsonify({
+            'success': True,
+            'videos_backup': videos_backup,
+            'cantidad_encontrados': len(videos_backup),
+            'mensaje': f'Encontrados {len(videos_backup)} videos backup como alternativas'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Error: {str(e)}'}), 500
+
+def generar_recomendaciones(semana, shorts_criticos, tasa_completado):
+    recomendaciones = []
+    
+    if tasa_completado < 50:
+        recomendaciones.append({
+            'tipo': 'critico',
+            'titulo': 'Tasa de completado muy baja',
+            'descripcion': 'Menos del 50% de shorts completados. Considera reasignar videos a la próxima semana.',
+            'accion': 'reasignar_masivo'
+        })
+    
+    if len(shorts_criticos) > 5:
+        recomendaciones.append({
+            'tipo': 'warning',
+            'titulo': 'Muchos videos en retraso',
+            'descripcion': f'{len(shorts_criticos)} videos con más de 3 días de retraso.',
+            'accion': 'priorizar_criticos'
+        })
+    
+    if tasa_completado > 80:
+        recomendaciones.append({
+            'tipo': 'success',
+            'titulo': 'Excelente progreso',
+            'descripcion': 'Más del 80% completado. Considera generar videos backup para próximas semanas.',
+            'accion': 'generar_backup'
+        })
+    
+    # Recomendar según día de la semana
+    hoy = datetime.now().weekday()  # 0 = lunes
+    if hoy >= 4:  # Viernes o después
+        recomendaciones.append({
+            'tipo': 'info',
+            'titulo': 'Revisión semanal recomendada',
+            'descripcion': 'Es un buen momento para revisar pendientes y planificar la próxima semana.',
+            'accion': 'revisar_semanal'
+        })
+    
+    return recomendaciones
+
 def init_db():
     with app.app_context():
         db.create_all()
