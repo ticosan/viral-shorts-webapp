@@ -219,92 +219,310 @@ def search_viral_videos():
         print(f"❌ Error buscando videos virales: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-def buscar_videos_virales_youtube(query, dias=3, vph_minimo=100, max_resultados=10):
-    """Buscar videos usando YouTube Data API v3"""
+def buscar_videos_virales_youtube(query, dias=3, vph_minimo=100, max_resultados=10, region='US', idioma='es'):
+    """
+    Sistema avanzado de descubrimiento viral con YouTube Data API v3
+    Implementa todas las métricas de viralidad activa y análisis de canales
+    """
     try:
         from datetime import datetime, timedelta
+        import re
+        
+        print(f"🔍 Buscando videos virales para: {query}")
         
         # Fecha límite para filtrar videos recientes
         fecha_limite = (datetime.utcnow() - timedelta(days=dias)).isoformat() + 'Z'
         
-        # Parámetros de búsqueda optimizados para viralidad
-        params = {
+        # PASO 1: Búsqueda inicial optimizada para viralidad
+        search_params = {
             'key': app.config['YOUTUBE_API_KEY'],
-            'part': 'snippet,statistics',
+            'part': 'snippet',
             'q': query,
             'type': 'video',
-            'order': 'relevance',  # Cambiar a relevance para mejores resultados
+            'order': 'viewCount',  # Ordenar por visualizaciones (pastel viral)
             'publishedAfter': fecha_limite,
-            'videoDuration': 'long',  # Videos largos >20min
-            'maxResults': min(max_resultados, 50),
-            'regionCode': 'US',
-            'relevanceLanguage': 'es'
+            'videoDuration': 'long',  # Videos largos >20min para extraer clips
+            'maxResults': min(max_resultados * 2, 50),  # Obtener más para filtrar mejor
+            'regionCode': region,
+            'relevanceLanguage': idioma,
+            'safeSearch': 'none',
+            'videoDefinition': 'high'
         }
         
-        response = requests.get('https://www.googleapis.com/youtube/v3/search', params=params)
-        data = response.json()
+        search_response = requests.get('https://www.googleapis.com/youtube/v3/search', params=search_params)
+        search_data = search_response.json()
         
-        if 'items' not in data:
+        if 'items' not in search_data:
             print(f"⚠️ No se encontraron videos para: {query}")
+            if 'error' in search_data:
+                print(f"❌ Error API: {search_data['error']['message']}")
+            return []
+        
+        video_ids = [item['id']['videoId'] for item in search_data['items']]
+        
+        if not video_ids:
+            print(f"⚠️ No se obtuvieron IDs de videos para: {query}")
+            return []
+        
+        # PASO 2: Obtener estadísticas detalladas y métricas de viralidad
+        print(f"📊 Analizando {len(video_ids)} videos con métricas avanzadas...")
+        
+        stats_params = {
+            'key': app.config['YOUTUBE_API_KEY'],
+            'part': 'statistics,contentDetails,snippet',
+            'id': ','.join(video_ids)
+        }
+        
+        stats_response = requests.get('https://www.googleapis.com/youtube/v3/videos', params=stats_params)
+        stats_data = stats_response.json()
+        
+        if 'items' not in stats_data:
+            print(f"❌ Error obteniendo estadísticas")
             return []
         
         videos_procesados = []
+        channel_ids = set()
         
-        for item in data['items']:
-            video_id = item['id']['videoId']
-            
-            # Obtener estadísticas detalladas
-            stats_params = {
-                'key': app.config['YOUTUBE_API_KEY'],
-                'part': 'statistics,contentDetails',
-                'id': video_id
-            }
-            
-            stats_response = requests.get('https://www.googleapis.com/youtube/v3/videos', params=stats_params)
-            stats_data = stats_response.json()
-            
-            if 'items' not in stats_data or not stats_data['items']:
-                continue
+        for item in stats_data['items']:
+            try:
+                stats = item['statistics']
+                content = item['contentDetails']
+                snippet = item['snippet']
                 
-            stats = stats_data['items'][0]['statistics']
-            content = stats_data['items'][0]['contentDetails']
-            
-            # Calcular VPH (Views Per Hour)
-            views = int(stats.get('viewCount', 0))
-            published_at = datetime.fromisoformat(item['snippet']['publishedAt'].replace('Z', '+00:00'))
-            horas_transcurridas = (datetime.now().astimezone() - published_at).total_seconds() / 3600
-            
-            vph = views / max(horas_transcurridas, 1)
-            
-            # Filtrar por VPH mínimo
-            if vph < vph_minimo:
+                # Extraer datos básicos
+                video_id = item['id']
+                views = int(stats.get('viewCount', 0))
+                likes = int(stats.get('likeCount', 0))
+                comments = int(stats.get('commentCount', 0))
+                channel_id = snippet['channelId']
+                channel_ids.add(channel_id)
+                
+                # Calcular tiempo transcurrido desde publicación
+                published_at = datetime.fromisoformat(snippet['publishedAt'].replace('Z', '+00:00'))
+                tiempo_transcurrido = datetime.now().astimezone() - published_at
+                horas_transcurridas = max(tiempo_transcurrido.total_seconds() / 3600, 1)  # Mínimo 1 hora
+                
+                # MÉTRICAS CLAVE DE VIRALIDAD ACTIVA
+                vph = views / horas_transcurridas  # Views Per Hour - MÉTRICA PRINCIPAL
+                
+                # Filtrar por VPH mínimo (viralidad activa)
+                if vph < vph_minimo:
+                    continue
+                
+                # Ratios de engagement (FTA - Factor de Tracción del Algoritmo)
+                likes_per_view = (likes / views) * 1000 if views > 0 else 0  # Por cada 1000 views
+                comments_per_view = (comments / views) * 1000 if views > 0 else 0
+                engagement_score = likes_per_view + (comments_per_view * 2)  # Comentarios valen más
+                
+                # Parsear duración (PT#H#M#S format)
+                duration_str = content['duration']
+                duration_match = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', duration_str)
+                if duration_match:
+                    hours = int(duration_match.group(1) or 0)
+                    minutes = int(duration_match.group(2) or 0)
+                    seconds = int(duration_match.group(3) or 0)
+                    duration_seconds = hours * 3600 + minutes * 60 + seconds
+                    duration_formatted = f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours > 0 else f"{minutes:02d}:{seconds:02d}"
+                else:
+                    duration_seconds = 0
+                    duration_formatted = "Desconocido"
+                
+                # Solo videos largos (>20 min = 1200 segundos) ideales para clips
+                if duration_seconds < 1200:  # 20 minutos
+                    continue
+                
+                # Calcular "viralidad velocity" (aceleración de views)
+                dias_transcurridos = max(tiempo_transcurrido.days, 1)
+                views_per_day = views / dias_transcurridos
+                
+                # Información completa del video
+                video_info = {
+                    'id': video_id,
+                    'title': snippet['title'],
+                    'channel': snippet['channelTitle'],
+                    'channel_id': channel_id,
+                    'thumbnail': snippet['thumbnails'].get('medium', {}).get('url', ''),
+                    'description': snippet.get('description', '')[:200] + '...' if snippet.get('description', '') else '',
+                    
+                    # Métricas básicas
+                    'views': views,
+                    'views_formatted': f"{views:,}",
+                    'likes': likes,
+                    'comments': comments,
+                    'duration_seconds': duration_seconds,
+                    'duration_formatted': duration_formatted,
+                    
+                    # MÉTRICAS DE VIRALIDAD ACTIVA
+                    'vph': round(vph, 2),
+                    'views_per_day': round(views_per_day, 0),
+                    'likes_per_view_1k': round(likes_per_view, 2),
+                    'comments_per_view_1k': round(comments_per_view, 2),
+                    'engagement_score': round(engagement_score, 2),
+                    
+                    # Información temporal
+                    'published_at': snippet['publishedAt'],
+                    'published_formatted': published_at.strftime('%d/%m/%Y %H:%M'),
+                    'horas_transcurridas': round(horas_transcurridas, 1),
+                    'dias_transcurridos': dias_transcurridos,
+                    
+                    # URLs y metadatos
+                    'url': f"https://youtube.com/watch?v={video_id}",
+                    'query_usado': query,
+                    'region': region,
+                    'idioma': idioma,
+                    
+                    # Puntuación viral compuesta
+                    'viral_score': calculate_viral_score(vph, engagement_score, views, dias_transcurridos)
+                }
+                
+                videos_procesados.append(video_info)
+                
+            except Exception as e:
+                print(f"⚠️ Error procesando video {item.get('id', 'unknown')}: {e}")
                 continue
-            
-            # Parsear duración
-            duration = content['duration']  # Formato PT#M#S
-            
-            video_info = {
-                'id': video_id,
-                'title': item['snippet']['title'],
-                'channel': item['snippet']['channelTitle'],
-                'thumbnail': item['snippet']['thumbnails']['medium']['url'],
-                'views': f"{views:,}",
-                'likes': int(stats.get('likeCount', 0)),
-                'comments': int(stats.get('commentCount', 0)),
-                'duration': duration,
-                'vph': int(vph),
-                'published_at': item['snippet']['publishedAt'],
-                'url': f"https://youtube.com/watch?v={video_id}",
-                'query_usado': query
-            }
-            
-            videos_procesados.append(video_info)
         
-        return videos_procesados
+        # PASO 3: Análisis de canales en crecimiento (Hockey Stick Detection)
+        if channel_ids and videos_procesados:
+            print(f"📈 Analizando {len(channel_ids)} canales para detectar crecimiento explosivo...")
+            channel_analysis = analyze_channels_growth(list(channel_ids))
+            
+            # Enriquecer videos con información del canal
+            for video in videos_procesados:
+                channel_data = channel_analysis.get(video['channel_id'], {})
+                video.update({
+                    'channel_subscribers': channel_data.get('subscribers', 0),
+                    'channel_total_views': channel_data.get('total_views', 0),
+                    'channel_growth_indicator': channel_data.get('growth_indicator', 'unknown'),
+                    'channel_viral_potential': channel_data.get('viral_potential', 0)
+                })
+        
+        # PASO 4: Ordenar por puntuación viral y métricas combinadas
+        videos_procesados.sort(key=lambda x: (
+            x['viral_score'],  # Puntuación viral principal
+            x['vph'],          # VPH como segundo criterio
+            x['engagement_score']  # Engagement como tercer criterio
+        ), reverse=True)
+        
+        # Tomar solo los mejores resultados
+        videos_finales = videos_procesados[:max_resultados]
+        
+        print(f"✅ Encontrados {len(videos_finales)} videos con alta viralidad activa")
+        print(f"📊 VPH promedio: {sum(v['vph'] for v in videos_finales) / len(videos_finales):.1f}")
+        print(f"🎯 Engagement promedio: {sum(v['engagement_score'] for v in videos_finales) / len(videos_finales):.2f}")
+        
+        return videos_finales
         
     except Exception as e:
-        print(f"❌ Error en búsqueda YouTube: {e}")
+        print(f"❌ Error crítico en búsqueda YouTube: {e}")
         return []
+
+def calculate_viral_score(vph, engagement_score, views, dias_transcurridos):
+    """
+    Calcular puntuación viral compuesta basada en múltiples factores
+    """
+    # Normalizar VPH (logarítmico para valores altos)
+    import math
+    vph_score = math.log10(max(vph, 1)) * 100
+    
+    # Puntuación por engagement
+    engagement_normalized = min(engagement_score, 50)  # Cap at 50
+    
+    # Bonus por views totales (logarítmico)
+    views_score = math.log10(max(views, 1)) * 10
+    
+    # Penalty por antiguedad (videos muy viejos son menos relevantes)
+    age_penalty = max(0, (dias_transcurridos - 30) * 0.1) if dias_transcurridos > 30 else 0
+    
+    # Puntuación final
+    total_score = vph_score + engagement_normalized + views_score - age_penalty
+    
+    return max(0, round(total_score, 2))
+
+def analyze_channels_growth(channel_ids):
+    """
+    Analizar canales para detectar crecimiento explosivo (Hockey Stick)
+    Aproximación inferencial basada en métricas disponibles
+    """
+    try:
+        if not channel_ids:
+            return {}
+            
+        # Obtener información de canales en lotes
+        channel_analysis = {}
+        
+        # Procesar en lotes de 50 (límite de la API)
+        for i in range(0, len(channel_ids), 50):
+            batch = channel_ids[i:i+50]
+            
+            params = {
+                'key': app.config['YOUTUBE_API_KEY'],
+                'part': 'statistics,snippet',
+                'id': ','.join(batch)
+            }
+            
+            response = requests.get('https://www.googleapis.com/youtube/v3/channels', params=params)
+            data = response.json()
+            
+            if 'items' not in data:
+                continue
+                
+            for channel in data['items']:
+                try:
+                    stats = channel['statistics']
+                    snippet = channel['snippet']
+                    
+                    subscribers = int(stats.get('subscriberCount', 0))
+                    total_views = int(stats.get('totalViewCount', 0))
+                    video_count = int(stats.get('videoCount', 1))
+                    
+                    # Calcular métricas de crecimiento inferencial
+                    avg_views_per_video = total_views / max(video_count, 1)
+                    subscriber_to_view_ratio = subscribers / max(total_views, 1) * 1000
+                    
+                    # Detectar patrones de crecimiento explosivo
+                    growth_indicator = 'unknown'
+                    viral_potential = 0
+                    
+                    if subscribers < 100000 and avg_views_per_video > 50000:
+                        growth_indicator = 'explosive'  # Canal pequeño con views altas = crecimiento explosivo
+                        viral_potential = 90
+                    elif subscribers < 500000 and avg_views_per_video > 100000:
+                        growth_indicator = 'high_growth'
+                        viral_potential = 80
+                    elif avg_views_per_video > subscribers * 2:
+                        growth_indicator = 'viral_content'  # Views por video > 2x subscribers
+                        viral_potential = 70
+                    elif subscriber_to_view_ratio < 5:  # Pocos subs pero muchas views
+                        growth_indicator = 'emerging'
+                        viral_potential = 60
+                    else:
+                        growth_indicator = 'stable'
+                        viral_potential = 30
+                    
+                    channel_analysis[channel['id']] = {
+                        'subscribers': subscribers,
+                        'total_views': total_views,
+                        'video_count': video_count,
+                        'avg_views_per_video': round(avg_views_per_video, 0),
+                        'subscriber_to_view_ratio': round(subscriber_to_view_ratio, 2),
+                        'growth_indicator': growth_indicator,
+                        'viral_potential': viral_potential,
+                        'channel_name': snippet.get('title', 'Unknown')
+                    }
+                    
+                except Exception as e:
+                    print(f"⚠️ Error analizando canal {channel.get('id', 'unknown')}: {e}")
+                    continue
+        
+        print(f"📈 Análisis de canales completado: {len(channel_analysis)} canales")
+        explosive_channels = [c for c in channel_analysis.values() if c['growth_indicator'] == 'explosive']
+        print(f"🚀 Canales con crecimiento explosivo detectados: {len(explosive_channels)}")
+        
+        return channel_analysis
+        
+    except Exception as e:
+        print(f"❌ Error en análisis de canales: {e}")
+        return {}
 
 @app.route('/nueva_semana')
 @login_required

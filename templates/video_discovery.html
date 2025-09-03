@@ -158,39 +158,134 @@ function displayVideoResults(videos) {
     const container = document.getElementById('videoResults');
     
     if (videos.length === 0) {
-        container.innerHTML = '<div class="p-4 text-muted text-center">No se encontraron videos</div>';
+        container.innerHTML = '<div class="p-4 text-muted text-center">No se encontraron videos virales</div>';
         return;
     }
     
-    const html = videos.map(video => `
-        <div class="border-bottom p-3 video-item" data-video-id="${video.id}">
-            <div class="row align-items-center">
-                <div class="col-md-3">
-                    <img src="${video.thumbnail}" class="img-fluid rounded" alt="Thumbnail">
-                </div>
-                <div class="col-md-6">
-                    <h6 class="mb-1">${video.title}</h6>
-                    <small class="text-muted d-block">${video.channel}</small>
-                    <div class="mt-2">
-                        <span class="badge bg-success me-1">VPH: ${video.vph}</span>
-                        <span class="badge bg-info me-1">${video.views} views</span>
-                        <span class="badge bg-warning">${video.duration}</span>
+    const html = videos.map((video, index) => {
+        // Indicador de viralidad basado en VPH
+        const viralityLevel = video.vph > 1000 ? 'extreme' : video.vph > 500 ? 'high' : video.vph > 200 ? 'medium' : 'low';
+        const viralityColor = viralityLevel === 'extreme' ? 'danger' : viralityLevel === 'high' ? 'warning' : viralityLevel === 'medium' ? 'success' : 'info';
+        
+        // Indicador de crecimiento del canal
+        const channelGrowthBadge = video.channel_growth_indicator === 'explosive' ? 
+            '<span class="badge bg-danger ms-1"><i class="fas fa-rocket"></i> Explosivo</span>' :
+            video.channel_growth_indicator === 'high_growth' ? 
+            '<span class="badge bg-warning ms-1"><i class="fas fa-trending-up"></i> Alto Crecimiento</span>' :
+            video.channel_growth_indicator === 'viral_content' ?
+            '<span class="badge bg-success ms-1"><i class="fas fa-fire"></i> Viral</span>' : 
+            video.channel_growth_indicator === 'emerging' ?
+            '<span class="badge bg-info ms-1"><i class="fas fa-seedling"></i> Emergente</span>' : '';
+        
+        return `
+        <div class="border-bottom p-3 video-item ${viralityLevel}-virality" data-video-id="${video.id}">
+            <div class="row">
+                <div class="col-lg-3">
+                    <div class="position-relative">
+                        <img src="${video.thumbnail}" class="img-fluid rounded" alt="Thumbnail">
+                        <div class="position-absolute top-0 start-0 p-1">
+                            <span class="badge bg-dark">#${index + 1}</span>
+                        </div>
+                        <div class="position-absolute bottom-0 end-0 p-1">
+                            <span class="badge bg-dark">${video.duration_formatted}</span>
+                        </div>
                     </div>
                 </div>
-                <div class="col-md-3 text-end">
-                    <button class="btn btn-outline-primary btn-sm mb-1" onclick="analyzeVideo('${video.id}')">
-                        <i class="fas fa-eye me-1"></i>Analizar
-                    </button>
-                    <br>
-                    <button class="btn btn-outline-success btn-sm" onclick="generateShorts('${video.id}')">
-                        <i class="fas fa-cut me-1"></i>Generar Shorts
-                    </button>
+                <div class="col-lg-6">
+                    <h6 class="mb-2 text-truncate" title="${video.title}">
+                        ${video.title}
+                    </h6>
+                    <p class="text-muted small mb-2">
+                        <i class="fas fa-user me-1"></i>${video.channel}
+                        ${channelGrowthBadge}
+                    </p>
+                    
+                    <!-- Métricas principales -->
+                    <div class="mb-2">
+                        <span class="badge bg-${viralityColor} me-1" title="Views Per Hour - Métrica principal de viralidad">
+                            🔥 VPH: ${video.vph.toLocaleString()}
+                        </span>
+                        <span class="badge bg-primary me-1" title="Views totales">
+                            👁️ ${video.views_formatted}
+                        </span>
+                        <span class="badge bg-success me-1" title="Engagement Score">
+                            📊 ENG: ${video.engagement_score}
+                        </span>
+                    </div>
+                    
+                    <!-- Métricas avanzadas -->
+                    <div class="small text-muted mb-2">
+                        <span class="me-3" title="Views por día">📅 ${video.views_per_day.toLocaleString()}/día</span>
+                        <span class="me-3" title="Likes por cada 1000 views">👍 ${video.likes_per_view_1k}/1k</span>
+                        <span class="me-3" title="Comentarios por cada 1000 views">💬 ${video.comments_per_view_1k}/1k</span>
+                        <span title="Puntuación viral compuesta">⭐ ${video.viral_score}</span>
+                    </div>
+                    
+                    <!-- Información temporal -->
+                    <div class="small text-muted">
+                        <i class="fas fa-clock me-1"></i>
+                        Publicado: ${video.published_formatted} 
+                        <span class="ms-2">(${video.horas_transcurridas}h transcurridas)</span>
+                    </div>
+                    
+                    <!-- Información del canal -->
+                    <div class="small text-muted mt-1">
+                        <i class="fas fa-users me-1"></i>
+                        Suscriptores: ${video.channel_subscribers?.toLocaleString() || 'N/A'}
+                        <span class="ms-2">Potencial viral: ${video.channel_viral_potential || 0}%</span>
+                    </div>
+                </div>
+                <div class="col-lg-3">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary btn-sm" onclick="analyzeVideo('${video.id}', '${video.title}')">
+                            <i class="fas fa-brain me-1"></i>Analizar con IA
+                        </button>
+                        <button class="btn btn-outline-success btn-sm" onclick="generateShorts('${video.id}', '${video.title}')">
+                            <i class="fas fa-cut me-1"></i>Generar Shorts
+                        </button>
+                        <button class="btn btn-outline-info btn-sm" onclick="viewDetails('${video.id}')">
+                            <i class="fas fa-eye me-1"></i>Ver Detalles
+                        </button>
+                        <a href="${video.url}" target="_blank" class="btn btn-outline-secondary btn-sm">
+                            <i class="fab fa-youtube me-1"></i>Ver en YouTube
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
     
     container.innerHTML = html;
+    
+    // Mostrar estadísticas del lote
+    const avgVph = videos.reduce((sum, v) => sum + v.vph, 0) / videos.length;
+    const avgEngagement = videos.reduce((sum, v) => sum + v.engagement_score, 0) / videos.length;
+    const explosiveChannels = videos.filter(v => v.channel_growth_indicator === 'explosive').length;
+    
+    // Añadir resumen estadístico
+    container.insertAdjacentHTML('afterbegin', `
+        <div class="alert alert-info mb-3">
+            <div class="row text-center">
+                <div class="col-md-3">
+                    <strong>${videos.length}</strong><br>
+                    <small>Videos encontrados</small>
+                </div>
+                <div class="col-md-3">
+                    <strong>${avgVph.toLocaleString()}</strong><br>
+                    <small>VPH promedio</small>
+                </div>
+                <div class="col-md-3">
+                    <strong>${avgEngagement.toFixed(1)}</strong><br>
+                    <small>Engagement promedio</small>
+                </div>
+                <div class="col-md-3">
+                    <strong>${explosiveChannels}</strong><br>
+                    <small>Canales explosivos</small>
+                </div>
+            </div>
+        </div>
+    `);
 }
 
 async function analyzeVideo(videoId) {
@@ -211,6 +306,81 @@ async function generateShorts(videoId) {
 
 .bg-gradient-primary {
     background: linear-gradient(45deg, #007bff, #6610f2);
+}
+
+/* Categorías de viralidad */
+.video-item.extreme-virality {
+    border-left: 5px solid #dc3545 !important;
+    background: linear-gradient(90deg, #fff5f5 0%, transparent 100%);
+}
+
+.video-item.high-virality {
+    border-left: 5px solid #fd7e14 !important;
+    background: linear-gradient(90deg, #fff8f0 0%, transparent 100%);
+}
+
+.video-item.medium-virality {
+    border-left: 5px solid #198754 !important;
+    background: linear-gradient(90deg, #f0fff4 0%, transparent 100%);
+}
+
+.video-item.low-virality {
+    border-left: 5px solid #0dcaf0 !important;
+    background: linear-gradient(90deg, #f0fcff 0%, transparent 100%);
+}
+
+/* Animación para videos extremadamente virales */
+.extreme-virality .badge.bg-danger {
+    animation: pulse-viral 2s ease-in-out infinite;
+}
+
+@keyframes pulse-viral {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+/* Mejoras en thumbnails */
+.video-item img {
+    transition: transform 0.3s ease;
+}
+
+.video-item:hover img {
+    transform: scale(1.02);
+}
+
+/* Badges con gradientes */
+.badge.bg-danger {
+    background: linear-gradient(45deg, #dc3545, #ff6b7a) !important;
+}
+
+.badge.bg-warning {
+    background: linear-gradient(45deg, #fd7e14, #ffab47) !important;
+}
+
+.badge.bg-success {
+    background: linear-gradient(45deg, #198754, #4ade80) !important;
+}
+
+/* Loading states */
+.searching {
+    position: relative;
+    overflow: hidden;
+}
+
+.searching::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: searching 1.5s infinite;
+}
+
+@keyframes searching {
+    0% { left: -100%; }
+    100% { left: 100%; }
 }
 </style>
 {% endblock %}
