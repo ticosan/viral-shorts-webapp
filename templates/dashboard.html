@@ -111,83 +111,150 @@
     </div>
 </div>
 
-<!-- Barra de Progreso -->
+<!-- Botones de acción rápida -->
 <div class="card mb-4">
     <div class="card-body">
-        <h5>Progreso Semanal</h5>
-        <div class="progress mb-2" style="height: 25px;">
-            <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" 
-                 style="width: {{ stats.progreso }}%">
-                {{ stats.completados }}/{{ stats.total_shorts }} shorts
-            </div>
+        <div class="d-flex gap-2 justify-content-center flex-wrap">
+            <a href="/planificar_semana?semana_id={{ semana_actual.id }}" class="btn btn-primary">
+                <i class="fas fa-calendar-plus me-1"></i>Planificar Semana (21 videos)
+            </a>
+            <a href="/buscar_videos" class="btn btn-success">
+                <i class="fas fa-search me-1"></i>Investigar Videos
+            </a>
+            <a href="/generar_guiones_masivo?semana_id={{ semana_actual.id }}" class="btn btn-warning">
+                <i class="fas fa-magic me-1"></i>Generar Guiones Masivo
+            </a>
+            <button class="btn btn-info" onclick="descargarVideosPendientes()">
+                <i class="fas fa-download me-1"></i>Descargar Videos
+            </button>
         </div>
-        <small class="text-muted">
-            {{ stats.pendientes }} pendientes • {{ stats.en_proceso }} en proceso • {{ stats.completados }} completados
-        </small>
     </div>
 </div>
 
-<!-- Shorts por Día -->
+<!-- Shorts por Día (3 por día) -->
 {% for dia in dias_orden %}
 <div class="card mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">
             <i class="fas fa-calendar-day me-2"></i>
             {{ dia.title() }}
+            {% set fecha_dia = semana_actual.fecha_inicio + loop.index0 * timedelta(days=1) %}
+            <small class="text-muted ms-2">{{ fecha_dia.strftime('%d/%m') }}</small>
         </h5>
         {% set dia_shorts = shorts_por_dia[dia] %}
-        <span class="badge bg-secondary">
-            {{ dia_shorts|selectattr('estado', 'equalto', 'completado')|list|length }}/{{ dia_shorts|length }} completados
-        </span>
+        <div>
+            <span class="badge bg-secondary me-2">
+                {{ dia_shorts|selectattr('estado', 'equalto', 'completado')|list|length }}/3 completados
+            </span>
+            <button class="btn btn-sm btn-outline-primary" onclick="crearShortsDia('{{ dia }}', '{{ fecha_dia }}')">
+                <i class="fas fa-plus me-1"></i>Crear 3 Shorts
+            </button>
+        </div>
     </div>
     <div class="card-body">
-        {% if dia_shorts %}
         <div class="row">
-            {% for short in dia_shorts %}
-            <div class="col-md-4 mb-3">
-                <div class="card border-left-{{ 'success' if short.estado == 'completado' else 'warning' if short.estado == 'en_proceso' else 'secondary' }}">
+            <!-- Short #1 del día -->
+            {% set short1 = dia_shorts|selectattr('orden_dia', 'equalto', 1)|first %}
+            <div class="col-md-4">
+                {% if short1 %}
+                <div class="card border-{{ 'success' if short1.estado == 'completado' else 'warning' if short1.estado in ['en_proceso', 'guion_generado'] else 'info' if short1.estado == 'investigacion' else 'secondary' }}">
                     <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <span class="badge bg-{{ 'success' if short.estado == 'completado' else 'warning' if short.estado == 'en_proceso' else 'secondary' }}">
-                                #{{ short.numero }}
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h6 class="card-title">{{ dia.title() }} #1</h6>
+                            <span class="badge bg-{{ 'success' if short1.estado == 'completado' else 'warning' if short1.estado in ['en_proceso', 'guion_generado'] else 'info' if short1.estado == 'investigacion' else 'secondary' }}">
+                                {{ short1.estado.replace('_', ' ').title() }}
                             </span>
-                            <small class="text-muted">VPH: {{ short.vph_fuente|int }}</small>
                         </div>
-                        
-                        <h6 class="card-title">{{ short.titulo }}</h6>
-                        <p class="card-text">
-                            <small class="text-muted">
-                                <i class="fas fa-tag me-1"></i>{{ short.tema.title() }}
-                            </small>
-                        </p>
-                        
-                        {% if short.estado == 'completado' %}
-                        <div class="mb-2">
-                            <small>
-                                <i class="fas fa-eye me-1"></i>{{ short.views|default(0) }} views
-                                <i class="fas fa-heart ms-2 me-1"></i>{{ "%.1f"|format(short.engagement|default(0)) }}%
-                            </small>
-                        </div>
-                        {% endif %}
-                        
-                        <div class="btn-group w-100">
-                            <button class="btn btn-sm btn-outline-primary" onclick="verShort({{ short.id }})">
-                                <i class="fas fa-eye"></i> Ver
-                            </button>
-                            <button class="btn btn-sm btn-{{ 'success' if short.estado == 'completado' else 'warning' if short.estado == 'en_proceso' else 'secondary' }}" 
-                                    onclick="actualizarEstado({{ short.id }})">
-                                <i class="fas fa-{{ 'check' if short.estado == 'completado' else 'clock' if short.estado == 'en_proceso' else 'play' }}"></i>
-                                {{ short.estado.title() }}
-                            </button>
+                        <p class="card-text text-truncate">{{ short1.titulo }}</p>
+                        <small class="text-muted d-block mb-2">{{ short1.tema.title() }} • VPH: {{ short1.vph_fuente|int }}</small>
+                        <div class="btn-group w-100" role="group">
+                            <a href="{{ url_for('ver_short', short_id=short1.id) }}" class="btn btn-sm btn-outline-primary">Ver</a>
+                            <button class="btn btn-sm btn-outline-success" onclick="cambiarEstado({{ short1.id }}, 'en_proceso')">Producir</button>
                         </div>
                     </div>
                 </div>
+                {% else %}
+                <div class="card border-light">
+                    <div class="card-body text-center text-muted">
+                        <i class="fas fa-plus-circle fa-2x mb-2"></i>
+                        <h6>{{ dia.title() }} #1</h6>
+                        <p>Sin planificar</p>
+                        <button class="btn btn-sm btn-primary" onclick="crearShort('{{ dia }}', 1)">
+                            <i class="fas fa-plus me-1"></i>Crear
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
             </div>
-            {% endfor %}
+
+            <!-- Short #2 del día -->
+            {% set short2 = dia_shorts|selectattr('orden_dia', 'equalto', 2)|first %}
+            <div class="col-md-4">
+                {% if short2 %}
+                <div class="card border-{{ 'success' if short2.estado == 'completado' else 'warning' if short2.estado in ['en_proceso', 'guion_generado'] else 'info' if short2.estado == 'investigacion' else 'secondary' }}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h6 class="card-title">{{ dia.title() }} #2</h6>
+                            <span class="badge bg-{{ 'success' if short2.estado == 'completado' else 'warning' if short2.estado in ['en_proceso', 'guion_generado'] else 'info' if short2.estado == 'investigacion' else 'secondary' }}">
+                                {{ short2.estado.replace('_', ' ').title() }}
+                            </span>
+                        </div>
+                        <p class="card-text text-truncate">{{ short2.titulo }}</p>
+                        <small class="text-muted d-block mb-2">{{ short2.tema.title() }} • VPH: {{ short2.vph_fuente|int }}</small>
+                        <div class="btn-group w-100" role="group">
+                            <a href="{{ url_for('ver_short', short_id=short2.id) }}" class="btn btn-sm btn-outline-primary">Ver</a>
+                            <button class="btn btn-sm btn-outline-success" onclick="cambiarEstado({{ short2.id }}, 'en_proceso')">Producir</button>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="card border-light">
+                    <div class="card-body text-center text-muted">
+                        <i class="fas fa-plus-circle fa-2x mb-2"></i>
+                        <h6>{{ dia.title() }} #2</h6>
+                        <p>Sin planificar</p>
+                        <button class="btn btn-sm btn-primary" onclick="crearShort('{{ dia }}', 2)">
+                            <i class="fas fa-plus me-1"></i>Crear
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Short #3 del día -->
+            {% set short3 = dia_shorts|selectattr('orden_dia', 'equalto', 3)|first %}
+            <div class="col-md-4">
+                {% if short3 %}
+                <div class="card border-{{ 'success' if short3.estado == 'completado' else 'warning' if short3.estado in ['en_proceso', 'guion_generado'] else 'info' if short3.estado == 'investigacion' else 'secondary' }}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h6 class="card-title">{{ dia.title() }} #3</h6>
+                            <span class="badge bg-{{ 'success' if short3.estado == 'completado' else 'warning' if short3.estado in ['en_proceso', 'guion_generado'] else 'info' if short3.estado == 'investigacion' else 'secondary' }}">
+                                {{ short3.estado.replace('_', ' ').title() }}
+                            </span>
+                        </div>
+                        <p class="card-text text-truncate">{{ short3.titulo }}</p>
+                        <small class="text-muted d-block mb-2">{{ short3.tema.title() }} • VPH: {{ short3.vph_fuente|int }}</small>
+                        <div class="btn-group w-100" role="group">
+                            <a href="{{ url_for('ver_short', short_id=short3.id) }}" class="btn btn-sm btn-outline-primary">Ver</a>
+                            <button class="btn btn-sm btn-outline-success" onclick="cambiarEstado({{ short3.id }}, 'en_proceso')">Producir</button>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="card border-light">
+                    <div class="card-body text-center text-muted">
+                        <i class="fas fa-plus-circle fa-2x mb-2"></i>
+                        <h6>{{ dia.title() }} #3</h6>
+                        <p>Sin planificar</p>
+                        <button class="btn btn-sm btn-primary" onclick="crearShort('{{ dia }}', 3)">
+                            <i class="fas fa-plus me-1"></i>Crear
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
         </div>
-        {% else %}
-        <p class="text-muted">No hay shorts programados para este día.</p>
-        {% endif %}
     </div>
 </div>
 {% endfor %}
@@ -244,6 +311,68 @@ let shortIdActual = null;
 
 function verShort(shortId) {
     window.open(`/short/${shortId}`, '_blank');
+}
+
+function cambiarEstado(shortId, nuevoEstado) {
+    $.ajax({
+        url: `/actualizar_short/${shortId}`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ estado: nuevoEstado }),
+        success: function(response) {
+            if (response.success) {
+                location.reload();
+            } else {
+                alert('Error al actualizar: ' + response.mensaje);
+            }
+        },
+        error: function() {
+            alert('Error de conexión');
+        }
+    });
+}
+
+function crearShort(dia, orden) {
+    // Redirigir a buscar videos con filtros del día
+    window.location.href = `/buscar_videos?dia=${dia}&orden=${orden}&semana_id={{ semana_actual.id }}`;
+}
+
+function crearShortsDia(dia, fecha) {
+    if (confirm(`¿Crear los 3 shorts para ${dia} ${fecha}? Esto te llevará a la búsqueda de videos.`)) {
+        window.location.href = `/planificar_dia?dia=${dia}&fecha=${fecha}&semana_id={{ semana_actual.id }}`;
+    }
+}
+
+function descargarVideosPendientes() {
+    const shortsPendientes = document.querySelectorAll('[data-estado="investigacion"], [data-estado="guion_generado"]').length;
+    
+    if (shortsPendientes === 0) {
+        alert('No hay videos pendientes para descargar');
+        return;
+    }
+    
+    if (confirm(`¿Descargar ${shortsPendientes} videos pendientes?`)) {
+        $.ajax({
+            url: `/api/descargar_videos_masivo`,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ semana_id: {{ semana_actual.id }} }),
+            success: function(response) {
+                if (response.success) {
+                    alert(`Iniciando descarga de ${response.videos_descargados} videos...`);
+                    // Actualizar progreso cada 5 segundos
+                    const interval = setInterval(() => {
+                        location.reload();
+                    }, 5000);
+                } else {
+                    alert('Error: ' + response.error);
+                }
+            },
+            error: function() {
+                alert('Error de conexión');
+            }
+        });
+    }
 }
 
 function actualizarEstado(shortId) {

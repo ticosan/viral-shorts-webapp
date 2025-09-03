@@ -178,7 +178,7 @@ def nueva_semana():
         fecha_inicio=nueva_fecha_inicio,
         fecha_fin=nueva_fecha_fin,
         estado='planificacion',
-        videos_objetivo=3
+        videos_objetivo=21  # 3 shorts por día x 7 días
     )
     
     db.session.add(nueva_semana_obj)
@@ -214,7 +214,7 @@ def crear_semana_actual():
         fecha_inicio=lunes,
         fecha_fin=domingo,
         estado='activa',
-        videos_objetivo=3
+        videos_objetivo=21  # 3 shorts por día x 7 días
     )
     
     db.session.add(nueva_semana)
