@@ -3,32 +3,64 @@
 {% block title %}Dashboard - Viral Shorts Manager{% endblock %}
 
 {% block content %}
+<!-- Header con selector de semana -->
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1><i class="fas fa-tachometer-alt me-2"></i>Dashboard Semanal</h1>
-    <div class="badge bg-success fs-6">Semana Activa</div>
+    <div>
+        <h1><i class="fas fa-calendar-week me-2"></i>Semana {{ semana_actual.numero_semana }} - {{ semana_actual.mes }} {{ semana_actual.año }}</h1>
+        <p class="text-muted mb-0">
+            <i class="fas fa-calendar-alt me-1"></i>
+            {{ semana_actual.fecha_inicio.strftime('%d/%m') }} - {{ semana_actual.fecha_fin.strftime('%d/%m/%Y') }}
+            <span class="badge bg-{{ 'success' if semana_actual.estado == 'activa' else 'secondary' if semana_actual.estado == 'planificacion' else 'info' }} ms-2">
+                {{ semana_actual.estado.title() }}
+            </span>
+        </p>
+    </div>
+    
+    <div class="dropdown">
+        <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+            <i class="fas fa-exchange-alt me-1"></i>Cambiar Semana
+        </button>
+        <ul class="dropdown-menu">
+            {% for semana in todas_semanas %}
+            <li>
+                <a class="dropdown-item {% if semana.id == semana_actual.id %}active{% endif %}" 
+                   href="/?semana_id={{ semana.id }}">
+                    Semana {{ semana.numero_semana }} - {{ semana.mes }} {{ semana.año }}
+                    <br><small class="text-muted">{{ semana.fecha_inicio.strftime('%d/%m') }} - {{ semana.fecha_fin.strftime('%d/%m') }}</small>
+                </a>
+            </li>
+            {% endfor %}
+            <li><hr class="dropdown-divider"></li>
+            <li>
+                <a class="dropdown-item" href="/nueva_semana">
+                    <i class="fas fa-plus me-1"></i>Nueva Semana
+                </a>
+            </li>
+        </ul>
+    </div>
 </div>
 
 <!-- Estadísticas Resumen -->
 <div class="row mb-4">
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card text-center bg-primary text-white">
             <div class="card-body">
                 <i class="fas fa-video fa-2x mb-2"></i>
                 <h3>{{ stats.total_shorts }}</h3>
-                <p class="mb-0">Total Shorts</p>
+                <p class="mb-0">Planificados</p>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card text-center bg-success text-white">
+    <div class="col-md-2">
+        <div class="card text-center bg-info text-white">
             <div class="card-body">
-                <i class="fas fa-check-circle fa-2x mb-2"></i>
-                <h3>{{ stats.completados }}</h3>
-                <p class="mb-0">Completados</p>
+                <i class="fas fa-search fa-2x mb-2"></i>
+                <h3>{{ stats.investigacion }}</h3>
+                <p class="mb-0">Investigación</p>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card text-center bg-warning text-white">
             <div class="card-body">
                 <i class="fas fa-clock fa-2x mb-2"></i>
@@ -37,13 +69,44 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card text-center bg-info text-white">
+    <div class="col-md-2">
+        <div class="card text-center bg-success text-white">
+            <div class="card-body">
+                <i class="fas fa-check-circle fa-2x mb-2"></i>
+                <h3>{{ stats.completados }}</h3>
+                <p class="mb-0">Completados</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-center bg-dark text-white">
             <div class="card-body">
                 <i class="fas fa-percentage fa-2x mb-2"></i>
                 <h3>{{ stats.progreso }}%</h3>
                 <p class="mb-0">Progreso</p>
             </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-center bg-secondary text-white">
+            <div class="card-body">
+                <i class="fas fa-target fa-2x mb-2"></i>
+                <h3>{{ semana_actual.videos_objetivo }}</h3>
+                <p class="mb-0">Objetivo</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Barra de progreso semanal -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">Progreso de la Semana</h6>
+            <small class="text-muted">{{ stats.completados }} de {{ semana_actual.videos_objetivo }} videos completados</small>
+        </div>
+        <div class="progress" style="height: 10px;">
+            <div class="progress-bar bg-success" style="width: {{ stats.progreso }}%"></div>
         </div>
     </div>
 </div>

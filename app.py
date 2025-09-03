@@ -42,21 +42,41 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(20), default='editor')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+class Semana(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    numero_semana = db.Column(db.Integer, nullable=False)  # 1, 2, 3, etc.
+    mes = db.Column(db.String(20), nullable=False)  # 'Septiembre', 'Octubre', etc.
+    año = db.Column(db.Integer, nullable=False)  # 2025
+    fecha_inicio = db.Column(db.Date, nullable=False)  # Lunes de la semana
+    fecha_fin = db.Column(db.Date, nullable=False)  # Domingo de la semana
+    estado = db.Column(db.String(20), default='planificacion')  # planificacion, activa, completada
+    videos_objetivo = db.Column(db.Integer, default=3)  # Cuántos shorts planear
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relación con shorts
+    shorts = db.relationship('Short', backref='semana_obj', lazy=True, cascade='all, delete-orphan')
+
 class Short(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    dia = db.Column(db.String(10), nullable=False)
-    numero = db.Column(db.Integer, nullable=False)
+    semana_id = db.Column(db.Integer, db.ForeignKey('semana.id'), nullable=False)
+    dia_publicacion = db.Column(db.Date, nullable=False)  # Fecha específica de publicación
+    dia_nombre = db.Column(db.String(10), nullable=False)  # 'lunes', 'martes', etc.
+    orden_dia = db.Column(db.Integer, default=1)  # Por si hay múltiples videos el mismo día
     titulo = db.Column(db.String(200), nullable=False)
     tema = db.Column(db.String(50), nullable=False)
-    estado = db.Column(db.String(20), default='pendiente')
+    estado = db.Column(db.String(20), default='investigacion')  # investigacion, guion_generado, en_proceso, completado, cancelado
     views = db.Column(db.Integer, default=0)
     engagement = db.Column(db.Float, default=0.0)
     url_youtube = db.Column(db.String(200))
     video_fuente_url = db.Column(db.String(200))
+    video_fuente_id = db.Column(db.String(50))  # YouTube video ID
     vph_fuente = db.Column(db.Float, default=0.0)
+    guion_generado = db.Column(db.Text)  # Guión generado por IA
+    video_descargado = db.Column(db.Boolean, default=False)
     completado_por = db.Column(db.Integer, db.ForeignKey('user.id'))
     completado_at = db.Column(db.DateTime)
     notas = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -65,34 +85,203 @@ def load_user(user_id):
 @app.route('/')
 @login_required
 def dashboard():
-    shorts = Short.query.order_by(Short.dia, Short.numero).all()
+    # Obtener semana específica o semana actual
+    semana_id = request.args.get('semana_id')
     
-    # Agrupar por días
+    if semana_id:
+        semana_actual = Semana.query.get(semana_id)
+    else:
+        # Obtener semana actual o más reciente
+        semana_actual = Semana.query.filter(
+            Semana.fecha_inicio <= datetime.now().date(),
+            Semana.fecha_fin >= datetime.now().date()
+        ).first()
+        
+        if not semana_actual:
+            # Si no hay semana actual, buscar la más reciente
+            semana_actual = Semana.query.order_by(Semana.fecha_inicio.desc()).first()
+    
+    # Si no existe ninguna semana, crear la semana actual
+    if not semana_actual:
+        semana_actual = crear_semana_actual()
+    
+    # Obtener todas las semanas para el selector
+    todas_semanas = Semana.query.order_by(Semana.fecha_inicio.desc()).all()
+    
+    # Obtener shorts de la semana actual
+    shorts = Short.query.filter_by(semana_id=semana_actual.id).order_by(Short.dia_publicacion).all()
+    
+    # Agrupar por días de la semana
     dias_orden = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
     shorts_por_dia = {dia: [] for dia in dias_orden}
     
     for short in shorts:
-        if short.dia in shorts_por_dia:
-            shorts_por_dia[short.dia].append(short)
+        if short.dia_nombre in shorts_por_dia:
+            shorts_por_dia[short.dia_nombre].append(short)
     
-    # Estadísticas
+    # Estadísticas de la semana
     total_shorts = len(shorts)
     completados = len([s for s in shorts if s.estado == 'completado'])
-    en_proceso = len([s for s in shorts if s.estado == 'en_proceso'])
-    progreso = (completados / total_shorts * 100) if total_shorts > 0 else 0
+    en_proceso = len([s for s in shorts if s.estado in ['en_proceso', 'guion_generado']])
+    investigacion = len([s for s in shorts if s.estado == 'investigacion'])
+    
+    progreso = (completados / semana_actual.videos_objetivo * 100) if semana_actual.videos_objetivo > 0 else 0
     
     stats = {
         'total_shorts': total_shorts,
         'completados': completados,
         'en_proceso': en_proceso,
+        'investigacion': investigacion,
         'pendientes': total_shorts - completados - en_proceso,
         'progreso': round(progreso, 1)
     }
     
     return render_template('dashboard.html', 
+                         semana_actual=semana_actual,
+                         todas_semanas=todas_semanas,
                          shorts_por_dia=shorts_por_dia,
                          dias_orden=dias_orden,
                          stats=stats)
+
+@app.route('/nueva_semana')
+@login_required
+def nueva_semana():
+    # Crear la próxima semana
+    ultima_semana = Semana.query.order_by(Semana.fecha_inicio.desc()).first()
+    
+    if ultima_semana:
+        # Crear semana siguiente
+        nueva_fecha_inicio = ultima_semana.fecha_fin + timedelta(days=1)
+    else:
+        # Primera semana
+        hoy = datetime.now().date()
+        dias_hasta_lunes = hoy.weekday()
+        nueva_fecha_inicio = hoy - timedelta(days=dias_hasta_lunes)
+    
+    nueva_fecha_fin = nueva_fecha_inicio + timedelta(days=6)
+    
+    # Determinar número de semana del mes
+    primer_dia_mes = nueva_fecha_inicio.replace(day=1)
+    dias_desde_inicio_mes = (nueva_fecha_inicio - primer_dia_mes).days
+    numero_semana = (dias_desde_inicio_mes // 7) + 1
+    
+    # Nombres de meses en español
+    meses = [
+        '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ]
+    
+    nueva_semana_obj = Semana(
+        numero_semana=numero_semana,
+        mes=meses[nueva_fecha_inicio.month],
+        año=nueva_fecha_inicio.year,
+        fecha_inicio=nueva_fecha_inicio,
+        fecha_fin=nueva_fecha_fin,
+        estado='planificacion',
+        videos_objetivo=3
+    )
+    
+    db.session.add(nueva_semana_obj)
+    db.session.commit()
+    
+    flash(f'Nueva semana creada: Semana {numero_semana} - {meses[nueva_fecha_inicio.month]} {nueva_fecha_inicio.year}', 'success')
+    return redirect(url_for('dashboard', semana_id=nueva_semana_obj.id))
+
+def crear_semana_actual():
+    """Crear la semana actual automáticamente"""
+    hoy = datetime.now().date()
+    
+    # Encontrar el lunes de esta semana
+    dias_hasta_lunes = hoy.weekday()  # 0 = lunes, 6 = domingo
+    lunes = hoy - timedelta(days=dias_hasta_lunes)
+    domingo = lunes + timedelta(days=6)
+    
+    # Determinar número de semana del mes
+    primer_dia_mes = hoy.replace(day=1)
+    dias_desde_inicio_mes = (lunes - primer_dia_mes).days
+    numero_semana = (dias_desde_inicio_mes // 7) + 1
+    
+    # Nombres de meses en español
+    meses = [
+        '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ]
+    
+    nueva_semana = Semana(
+        numero_semana=numero_semana,
+        mes=meses[hoy.month],
+        año=hoy.year,
+        fecha_inicio=lunes,
+        fecha_fin=domingo,
+        estado='activa',
+        videos_objetivo=3
+    )
+    
+    db.session.add(nueva_semana)
+    db.session.commit()
+    
+    return nueva_semana
+
+def migrar_datos_antiguos():
+    """Migrar datos del formato anterior al nuevo sistema semanal"""
+    try:
+        # Verificar si hay columna semana_id (nuevos modelos)
+        inspector = db.inspect(db.engine)
+        if 'short' not in inspector.get_table_names():
+            return
+            
+        columns = [col['name'] for col in inspector.get_columns('short')]
+        if 'semana_id' not in columns:
+            return
+            
+        # Verificar si existen shorts antiguos sin semana_id
+        shorts_antiguos = Short.query.filter(Short.semana_id == None).all()
+        
+        if not shorts_antiguos:
+            return
+            
+        # Crear semana de migración para datos antiguos
+        semana_migracion = Semana.query.filter_by(estado='migracion').first()
+        
+        if not semana_migracion:
+            hoy = datetime.now().date()
+            dias_hasta_lunes = hoy.weekday()
+            lunes = hoy - timedelta(days=dias_hasta_lunes)
+            domingo = lunes + timedelta(days=6)
+            
+            semana_migracion = Semana(
+                numero_semana=1,
+                mes='Migración',
+                año=2025,
+                fecha_inicio=lunes,
+                fecha_fin=domingo,
+                estado='migracion',
+                videos_objetivo=len(shorts_antiguos)
+            )
+            db.session.add(semana_migracion)
+            db.session.commit()
+        
+        # Migrar cada short antiguo
+        dias_map = {
+            'lunes': 0, 'martes': 1, 'miercoles': 2, 'jueves': 3, 
+            'viernes': 4, 'sabado': 5, 'domingo': 6
+        }
+        
+        for short in shorts_antiguos:
+            dia_offset = dias_map.get(getattr(short, 'dia', 'lunes'), 0)
+            fecha_publicacion = semana_migracion.fecha_inicio + timedelta(days=dia_offset)
+            
+            # Actualizar short con nuevos campos
+            short.semana_id = semana_migracion.id
+            short.dia_publicacion = fecha_publicacion
+            short.dia_nombre = getattr(short, 'dia', 'lunes')
+            short.orden_dia = 1
+            
+        db.session.commit()
+        print(f"✅ Migrados {len(shorts_antiguos)} shorts al nuevo sistema semanal")
+        
+    except Exception as e:
+        print(f"⚠️ Error en migración: {str(e)}")
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -633,6 +822,9 @@ def analizar_canal():
 def init_db():
     with app.app_context():
         db.create_all()
+        
+        # Migrar datos antiguos si existen
+        migrar_datos_antiguos()
         
         if not User.query.filter_by(username='admin').first():
             admin = User(
