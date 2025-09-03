@@ -85,63 +85,74 @@ def load_user(user_id):
 @app.route('/')
 @login_required
 def dashboard():
-    # Obtener semana específica o semana actual
-    semana_id = request.args.get('semana_id')
-    
-    if semana_id:
-        semana_actual = Semana.query.get(semana_id)
-    else:
-        # Obtener semana actual o más reciente
-        semana_actual = Semana.query.filter(
-            Semana.fecha_inicio <= datetime.now().date(),
-            Semana.fecha_fin >= datetime.now().date()
-        ).first()
+    try:
+        # Obtener semana específica o semana actual
+        semana_id = request.args.get('semana_id')
         
+        if semana_id:
+            semana_actual = Semana.query.get(semana_id)
+        else:
+            # Obtener semana actual o más reciente
+            semana_actual = Semana.query.filter(
+                Semana.fecha_inicio <= datetime.now().date(),
+                Semana.fecha_fin >= datetime.now().date()
+            ).first()
+            
+            if not semana_actual:
+                # Si no hay semana actual, buscar la más reciente
+                semana_actual = Semana.query.order_by(Semana.fecha_inicio.desc()).first()
+        
+        # Si no existe ninguna semana, crear la semana actual
         if not semana_actual:
-            # Si no hay semana actual, buscar la más reciente
-            semana_actual = Semana.query.order_by(Semana.fecha_inicio.desc()).first()
-    
-    # Si no existe ninguna semana, crear la semana actual
-    if not semana_actual:
-        semana_actual = crear_semana_actual()
-    
-    # Obtener todas las semanas para el selector
-    todas_semanas = Semana.query.order_by(Semana.fecha_inicio.desc()).all()
-    
-    # Obtener shorts de la semana actual
-    shorts = Short.query.filter_by(semana_id=semana_actual.id).order_by(Short.dia_publicacion).all()
-    
-    # Agrupar por días de la semana
-    dias_orden = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
-    shorts_por_dia = {dia: [] for dia in dias_orden}
-    
-    for short in shorts:
-        if short.dia_nombre in shorts_por_dia:
-            shorts_por_dia[short.dia_nombre].append(short)
-    
-    # Estadísticas de la semana
-    total_shorts = len(shorts)
-    completados = len([s for s in shorts if s.estado == 'completado'])
-    en_proceso = len([s for s in shorts if s.estado in ['en_proceso', 'guion_generado']])
-    investigacion = len([s for s in shorts if s.estado == 'investigacion'])
-    
-    progreso = (completados / semana_actual.videos_objetivo * 100) if semana_actual.videos_objetivo > 0 else 0
-    
-    stats = {
-        'total_shorts': total_shorts,
-        'completados': completados,
-        'en_proceso': en_proceso,
-        'investigacion': investigacion,
-        'pendientes': total_shorts - completados - en_proceso,
-        'progreso': round(progreso, 1)
-    }
-    
-    return render_template('dashboard.html', 
-                         semana_actual=semana_actual,
-                         todas_semanas=todas_semanas,
-                         shorts_por_dia=shorts_por_dia,
-                         dias_orden=dias_orden,
-                         stats=stats)
+            semana_actual = crear_semana_actual()
+        
+        # Obtener todas las semanas para el selector
+        todas_semanas = Semana.query.order_by(Semana.fecha_inicio.desc()).all()
+        
+        # Obtener shorts de la semana actual
+        shorts = Short.query.filter_by(semana_id=semana_actual.id).order_by(Short.dia_publicacion).all()
+        
+        # Agrupar por días de la semana
+        dias_orden = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
+        shorts_por_dia = {dia: [] for dia in dias_orden}
+        
+        for short in shorts:
+            if short.dia_nombre in shorts_por_dia:
+                shorts_por_dia[short.dia_nombre].append(short)
+        
+        # Estadísticas de la semana
+        total_shorts = len(shorts)
+        completados = len([s for s in shorts if s.estado == 'completado'])
+        en_proceso = len([s for s in shorts if s.estado in ['en_proceso', 'guion_generado']])
+        investigacion = len([s for s in shorts if s.estado == 'investigacion'])
+        
+        progreso = (completados / semana_actual.videos_objetivo * 100) if semana_actual.videos_objetivo > 0 else 0
+        
+        stats = {
+            'total_shorts': total_shorts,
+            'completados': completados,
+            'en_proceso': en_proceso,
+            'investigacion': investigacion,
+            'pendientes': total_shorts - completados - en_proceso,
+            'progreso': round(progreso, 1)
+        }
+        
+        return render_template('dashboard.html', 
+                             semana_actual=semana_actual,
+                             todas_semanas=todas_semanas,
+                             shorts_por_dia=shorts_por_dia,
+                             dias_orden=dias_orden,
+                             stats=stats)
+    except Exception as e:
+        print(f"❌ Error en dashboard: {e}")
+        # En caso de error, mostrar dashboard básico
+        return render_template('dashboard.html', 
+                             semana_actual=None,
+                             todas_semanas=[],
+                             shorts_por_dia={},
+                             dias_orden=[],
+                             stats={},
+                             error_message=f"Error cargando dashboard: {e}")
 
 @app.route('/nueva_semana')
 @login_required
@@ -235,16 +246,21 @@ def migrar_datos_antiguos():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        
-        user = User.query.filter_by(username=username).first()
-        
-        if user and check_password_hash(user.password_hash, password):
-            login_user(user)
-            return redirect(url_for('dashboard'))
-        else:
-            flash('Usuario o contraseña incorrectos', 'error')
+        try:
+            username = request.form['username']
+            password = request.form['password']
+            
+            user = User.query.filter_by(username=username).first()
+            
+            if user and check_password_hash(user.password_hash, password):
+                login_user(user)
+                return redirect(url_for('dashboard'))
+            else:
+                flash('Usuario o contraseña incorrectos', 'error')
+        except Exception as e:
+            print(f"❌ Error en login: {e}")
+            flash(f'Error de base de datos: {e}')
+            return render_template('login.html')
     
     return render_template('login.html')
 
@@ -1431,35 +1447,50 @@ def generar_recomendaciones(semana, shorts_criticos, tasa_completado):
     return recomendaciones
 
 def init_db():
-    with app.app_context():
-        db.create_all()
-        
-        # Migrar datos antiguos si existen
-        migrar_datos_antiguos()
-        
-        if not User.query.filter_by(username='admin').first():
-            admin = User(
-                username='admin',
-                email='admin@shortsmanager.com',
-                password_hash=generate_password_hash('admin123'),
-                role='admin'
-            )
-            db.session.add(admin)
+    try:
+        with app.app_context():
+            db.create_all()
+            print("✅ Tablas de base de datos creadas")
             
-            asistente = User(
-                username='asistente',
-                email='asistente@shortsmanager.com',
-                password_hash=generate_password_hash('asistente123'),
-                role='editor'
-            )
-            db.session.add(asistente)
+            # Migrar datos antiguos si existen
+            try:
+                migrar_datos_antiguos()
+                print("✅ Migración de datos completada")
+            except Exception as e:
+                print(f"⚠️  Error en migración (continuando): {e}")
             
-            # Solo crear la semana inicial, sin shorts de ejemplo
-            # Los shorts se crearán usando el sistema de planificación
-            crear_semana_actual()
-            
-            db.session.commit()
-            print("✅ Base de datos inicializada - usar planificación para crear shorts")
+            if not User.query.filter_by(username='admin').first():
+                admin = User(
+                    username='admin',
+                    email='admin@shortsmanager.com',
+                    password_hash=generate_password_hash('admin123'),
+                    role='admin'
+                )
+                db.session.add(admin)
+                
+                asistente = User(
+                    username='asistente',
+                    email='asistente@shortsmanager.com',
+                    password_hash=generate_password_hash('asistente123'),
+                    role='editor'
+                )
+                db.session.add(asistente)
+                
+                # Solo crear la semana inicial, sin shorts de ejemplo
+                # Los shorts se crearán usando el sistema de planificación
+                try:
+                    crear_semana_actual()
+                    print("✅ Semana inicial creada")
+                except Exception as e:
+                    print(f"⚠️  Error creando semana inicial: {e}")
+                
+                db.session.commit()
+                print("✅ Base de datos inicializada - usar planificación para crear shorts")
+            else:
+                print("✅ Base de datos ya inicializada")
+    except Exception as e:
+        print(f"❌ Error inicializando base de datos: {e}")
+        raise
 
 def create_app():
     init_db()
