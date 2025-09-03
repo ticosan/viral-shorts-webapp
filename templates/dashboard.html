@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Viral Shorts Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-tachometer-alt me-2"></i>Dashboard Semanal</h1>
+    <div class="badge bg-success fs-6">Semana Activa</div>
+</div>
+
+<!-- Estadísticas Resumen -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center bg-primary text-white">
+            <div class="card-body">
+                <i class="fas fa-video fa-2x mb-2"></i>
+                <h3>{{ stats.total_shorts }}</h3>
+                <p class="mb-0">Total Shorts</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center bg-success text-white">
+            <div class="card-body">
+                <i class="fas fa-check-circle fa-2x mb-2"></i>
+                <h3>{{ stats.completados }}</h3>
+                <p class="mb-0">Completados</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center bg-warning text-white">
+            <div class="card-body">
+                <i class="fas fa-clock fa-2x mb-2"></i>
+                <h3>{{ stats.en_proceso }}</h3>
+                <p class="mb-0">En Proceso</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center bg-info text-white">
+            <div class="card-body">
+                <i class="fas fa-percentage fa-2x mb-2"></i>
+                <h3>{{ stats.progreso }}%</h3>
+                <p class="mb-0">Progreso</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Barra de Progreso -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h5>Progreso Semanal</h5>
+        <div class="progress mb-2" style="height: 25px;">
+            <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" 
+                 style="width: {{ stats.progreso }}%">
+                {{ stats.completados }}/{{ stats.total_shorts }} shorts
+            </div>
+        </div>
+        <small class="text-muted">
+            {{ stats.pendientes }} pendientes • {{ stats.en_proceso }} en proceso • {{ stats.completados }} completados
+        </small>
+    </div>
+</div>
+
+<!-- Shorts por Día -->
+{% for dia in dias_orden %}
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+            <i class="fas fa-calendar-day me-2"></i>
+            {{ dia.title() }}
+        </h5>
+        {% set dia_shorts = shorts_por_dia[dia] %}
+        <span class="badge bg-secondary">
+            {{ dia_shorts|selectattr('estado', 'equalto', 'completado')|list|length }}/{{ dia_shorts|length }} completados
+        </span>
+    </div>
+    <div class="card-body">
+        {% if dia_shorts %}
+        <div class="row">
+            {% for short in dia_shorts %}
+            <div class="col-md-4 mb-3">
+                <div class="card border-left-{{ 'success' if short.estado == 'completado' else 'warning' if short.estado == 'en_proceso' else 'secondary' }}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <span class="badge bg-{{ 'success' if short.estado == 'completado' else 'warning' if short.estado == 'en_proceso' else 'secondary' }}">
+                                #{{ short.numero }}
+                            </span>
+                            <small class="text-muted">VPH: {{ short.vph_fuente|int }}</small>
+                        </div>
+                        
+                        <h6 class="card-title">{{ short.titulo }}</h6>
+                        <p class="card-text">
+                            <small class="text-muted">
+                                <i class="fas fa-tag me-1"></i>{{ short.tema.title() }}
+                            </small>
+                        </p>
+                        
+                        {% if short.estado == 'completado' %}
+                        <div class="mb-2">
+                            <small>
+                                <i class="fas fa-eye me-1"></i>{{ short.views|default(0) }} views
+                                <i class="fas fa-heart ms-2 me-1"></i>{{ "%.1f"|format(short.engagement|default(0)) }}%
+                            </small>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="btn-group w-100">
+                            <button class="btn btn-sm btn-outline-primary" onclick="verShort({{ short.id }})">
+                                <i class="fas fa-eye"></i> Ver
+                            </button>
+                            <button class="btn btn-sm btn-{{ 'success' if short.estado == 'completado' else 'warning' if short.estado == 'en_proceso' else 'secondary' }}" 
+                                    onclick="actualizarEstado({{ short.id }})">
+                                <i class="fas fa-{{ 'check' if short.estado == 'completado' else 'clock' if short.estado == 'en_proceso' else 'play' }}"></i>
+                                {{ short.estado.title() }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">No hay shorts programados para este día.</p>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+<!-- Modal para actualizar short -->
+<div class="modal fade" id="actualizarModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Actualizar Short</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="actualizarForm">
+                    <div class="mb-3">
+                        <label class="form-label">Estado</label>
+                        <select class="form-select" id="estado" name="estado">
+                            <option value="pendiente">Pendiente</option>
+                            <option value="en_proceso">En Proceso</option>
+                            <option value="completado">Completado</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Views (opcional)</label>
+                        <input type="number" class="form-control" id="views" name="views" min="0">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Engagement % (opcional)</label>
+                        <input type="number" class="form-control" id="engagement" name="engagement" min="0" max="100" step="0.1">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">URL YouTube (opcional)</label>
+                        <input type="url" class="form-control" id="url_youtube" name="url_youtube" placeholder="https://youtube.com/shorts/...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notas</label>
+                        <textarea class="form-control" id="notas" name="notas" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="guardarActualizacion()">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let shortIdActual = null;
+
+function verShort(shortId) {
+    window.open(`/short/${shortId}`, '_blank');
+}
+
+function actualizarEstado(shortId) {
+    shortIdActual = shortId;
+    $('#actualizarModal').modal('show');
+}
+
+function guardarActualizacion() {
+    if (!shortIdActual) return;
+    
+    const formData = {
+        estado: $('#estado').val(),
+        views: $('#views').val(),
+        engagement: $('#engagement').val(),
+        url_youtube: $('#url_youtube').val(),
+        notas: $('#notas').val()
+    };
+    
+    $.ajax({
+        url: `/actualizar_short/${shortIdActual}`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(formData),
+        success: function(response) {
+            if (response.success) {
+                location.reload();
+            } else {
+                alert('Error al actualizar: ' + response.mensaje);
+            }
+        },
+        error: function() {
+            alert('Error de conexión');
+        }
+    });
+}
+</script>
+{% endblock %}

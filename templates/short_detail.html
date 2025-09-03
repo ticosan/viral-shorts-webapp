@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+
+{% block title %}{{ short.titulo }} - Viral Shorts Manager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4>{{ short.titulo }}</h4>
+                <div class="d-flex justify-content-between">
+                    <span class="badge bg-primary">{{ short.dia.title() }} #{{ short.numero }}</span>
+                    <span class="badge bg-{{ 'success' if short.estado == 'completado' else 'warning' if short.estado == 'en_proceso' else 'secondary' }}">
+                        {{ short.estado.title() }}
+                    </span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Tema:</strong> {{ short.tema.title() }}<br>
+                        <strong>VPH Fuente:</strong> {{ short.vph_fuente|int }}<br>
+                        {% if short.views > 0 %}
+                        <strong>Views:</strong> {{ short.views }}<br>
+                        <strong>Engagement:</strong> {{ "%.1f"|format(short.engagement) }}%<br>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6">
+                        {% if short.completado_at %}
+                        <strong>Completado:</strong> {{ short.completado_at.strftime('%d/%m/%Y %H:%M') }}<br>
+                        {% endif %}
+                        {% if short.url_youtube %}
+                        <strong>YouTube:</strong> <a href="{{ short.url_youtube }}" target="_blank">Ver video</a><br>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                {% if short.notas %}
+                <div class="alert alert-info">
+                    <h6>📝 Notas:</h6>
+                    {{ short.notas }}
+                </div>
+                {% endif %}
+
+                <!-- Guión simulado basado en tus templates -->
+                <div class="card bg-light">
+                    <div class="card-header">
+                        <h5>🎬 Guión del Short</h5>
+                    </div>
+                    <div class="card-body">
+                        <h6>📹 VIDEO FUENTE:</h6>
+                        <ul class="list-unstyled">
+                            <li><strong>VPH:</strong> {{ short.vph_fuente|int }} (Viral)</li>
+                            <li><strong>Duración:</strong> 60 segundos</li>
+                            <li><strong>Formato:</strong> 9:16 vertical</li>
+                        </ul>
+
+                        <h6 class="mt-4">🎯 TÍTULO OPTIMIZADO:</h6>
+                        <code>{{ short.titulo }}</code>
+
+                        <h6 class="mt-4">📝 ESTRUCTURA (60 segundos):</h6>
+                        <div class="timeline">
+                            <div class="timeline-item">
+                                <span class="badge bg-danger">[0-5s]</span>
+                                <strong>Hook:</strong> "🚨 {{ short.titulo.split(' ')[1:4]|join(' ') }}..."
+                            </div>
+                            <div class="timeline-item mt-2">
+                                <span class="badge bg-primary">[5-45s]</span>
+                                <strong>Clip + Análisis:</strong> Video original + 3 overlays
+                            </div>
+                            <div class="timeline-item mt-2">
+                                <span class="badge bg-success">[45-60s]</span>
+                                <strong>Conclusión:</strong> Tu análisis final + CTA
+                            </div>
+                        </div>
+
+                        <h6 class="mt-4">💡 OVERLAYS SUGERIDOS:</h6>
+                        <ul>
+                            <li><code>[15s]</code> ❌ "ERROR: No consideran esto"</li>
+                            <li><code>[25s]</code> ⚠️ "RIESGO: Para ciertos casos"</li>
+                            <li><code>[35s]</code> ✅ "MEJOR: Alternativa real"</li>
+                        </ul>
+
+                        <h6 class="mt-4">🎯 OBJETIVO:</h6>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="text-center p-2 bg-primary text-white rounded">
+                                    <small>Views Meta</small><br>
+                                    <strong>{{ "50K+" if short.vph_fuente > 2000 else "25K+" if short.vph_fuente > 1000 else "10K+" }}</strong>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-center p-2 bg-success text-white rounded">
+                                    <small>Engagement</small><br>
+                                    <strong>5%+</strong>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-center p-2 bg-warning text-white rounded">
+                                    <small>Retención</small><br>
+                                    <strong>80%+</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>⚡ Acciones Rápidas</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" onclick="marcarEnProceso()">
+                        <i class="fas fa-play"></i> Marcar En Proceso
+                    </button>
+                    <button class="btn btn-success" onclick="marcarCompletado()">
+                        <i class="fas fa-check"></i> Marcar Completado
+                    </button>
+                    <button class="btn btn-info" onclick="agregarNota()">
+                        <i class="fas fa-note-sticky"></i> Agregar Nota
+                    </button>
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Volver al Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6>📊 Hashtags Optimizados</h6>
+            </div>
+            <div class="card-body">
+                <small class="text-muted">
+                    #shorts #viral #{{ short.tema }} #dinero #finanzas #consejos #error #emprendimiento #inversion
+                </small>
+            </div>
+        </div>
+
+        {% if short.estado == 'completado' and short.views > 0 %}
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6>🏆 Performance</h6>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <small class="text-muted">Views</small><br>
+                            <strong>{{ short.views }}</strong>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <small class="text-muted">Engagement</small><br>
+                            <strong>{{ "%.1f"|format(short.engagement) }}%</strong>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if short.views > 50000 %}
+                <div class="alert alert-success mt-3 mb-0">
+                    <i class="fas fa-fire"></i> ¡Video Viral! 🔥
+                </div>
+                {% elif short.views > 20000 %}
+                <div class="alert alert-warning mt-3 mb-0">
+                    <i class="fas fa-trending-up"></i> Buen Performance 📈
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function marcarEnProceso() {
+    actualizarShort('en_proceso');
+}
+
+function marcarCompletado() {
+    const views = prompt('¿Cuántas views tiene? (opcional)');
+    const engagement = prompt('¿Qué engagement %? (opcional)');
+    const url = prompt('URL de YouTube (opcional)');
+    
+    actualizarShort('completado', {
+        views: views || 0,
+        engagement: engagement || 0,
+        url_youtube: url || ''
+    });
+}
+
+function agregarNota() {
+    const nota = prompt('Agregar nota:');
+    if (nota) {
+        actualizarShort(null, { notas: nota });
+    }
+}
+
+function actualizarShort(estado, extras = {}) {
+    const data = extras;
+    if (estado) data.estado = estado;
+    
+    $.ajax({
+        url: `/actualizar_short/{{ short.id }}`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function(response) {
+            if (response.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + response.mensaje);
+            }
+        },
+        error: function() {
+            alert('Error de conexión');
+        }
+    });
+}
+</script>
+{% endblock %}

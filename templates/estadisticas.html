@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}Estadísticas - Viral Shorts Manager{% endblock %}
+
+{% block content %}
+<h1><i class="fas fa-chart-bar me-2"></i>Estadísticas del Canal</h1>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center bg-gradient-primary text-white">
+            <div class="card-body">
+                <i class="fas fa-video fa-3x mb-3"></i>
+                <h2>{{ stats.total_shorts }}</h2>
+                <p>Total Shorts</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center bg-gradient-success text-white">
+            <div class="card-body">
+                <i class="fas fa-check-circle fa-3x mb-3"></i>
+                <h2>{{ stats.total_completados }}</h2>
+                <p>Completados</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center bg-gradient-warning text-white">
+            <div class="card-body">
+                <i class="fas fa-eye fa-3x mb-3"></i>
+                <h2>{{ "{:,}".format(stats.total_views) }}</h2>
+                <p>Total Views</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center bg-gradient-info text-white">
+            <div class="card-body">
+                <i class="fas fa-chart-line fa-3x mb-3"></i>
+                <h2>{{ "{:,}".format(stats.promedio_views) }}</h2>
+                <p>Promedio Views</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5>🏆 Top 10 Shorts Performers</h5>
+            </div>
+            <div class="card-body">
+                {% if stats.top_shorts %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Título</th>
+                                <th>Views</th>
+                                <th>Engagement</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for short in stats.top_shorts %}
+                            <tr>
+                                <td>
+                                    {% if loop.index <= 3 %}
+                                        <i class="fas fa-trophy text-{{ 'warning' if loop.index == 1 else 'secondary' if loop.index == 2 else 'info' }}"></i>
+                                    {% else %}
+                                        {{ loop.index }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('ver_short', short_id=short.id) }}" class="text-decoration-none">
+                                        {{ short.titulo[:40] }}{% if short.titulo|length > 40 %}...{% endif %}
+                                    </a>
+                                    <br>
+                                    <small class="text-muted">{{ short.dia.title() }} #{{ short.numero }}</small>
+                                </td>
+                                <td>
+                                    <strong>{{ "{:,}".format(short.views) }}</strong>
+                                    {% if short.views > 100000 %}
+                                        <i class="fas fa-fire text-danger ms-1"></i>
+                                    {% elif short.views > 50000 %}
+                                        <i class="fas fa-trending-up text-warning ms-1"></i>
+                                    {% endif %}
+                                </td>
+                                <td>{{ "%.1f"|format(short.engagement) }}%</td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if short.estado == 'completado' else 'warning' if short.estado == 'en_proceso' else 'secondary' }}">
+                                        {{ short.estado.title() }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-muted">
+                    <i class="fas fa-chart-bar fa-3x mb-3"></i>
+                    <p>Aún no hay shorts con views registradas</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>📊 Resumen General</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Tasa de Completado:</span>
+                    <strong>{{ stats.tasa_completado }}%</strong>
+                </div>
+                <div class="progress mb-3">
+                    <div class="progress-bar bg-success" style="width: {{ stats.tasa_completado }}%"></div>
+                </div>
+                
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Shorts por Día:</span>
+                    <strong>{{ "%.1f"|format(stats.total_shorts / 7) }}</strong>
+                </div>
+                
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Views por Short:</span>
+                    <strong>{{ "{:,}".format(stats.promedio_views) }}</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>🎯 Objetivos</h5>
+            </div>
+            <div class="card-body">
+                <div class="goal-item">
+                    <div class="d-flex justify-content-between">
+                        <span>Shorts Completados</span>
+                        <span>{{ stats.total_completados }}/21</span>
+                    </div>
+                    <div class="progress mb-2">
+                        <div class="progress-bar" style="width: {{ (stats.total_completados/21*100)|round }}%"></div>
+                    </div>
+                </div>
+                
+                <div class="goal-item">
+                    <div class="d-flex justify-content-between">
+                        <span>Meta Views Semanal</span>
+                        <span>{{ "{:,}".format(stats.total_views) }}/100K</span>
+                    </div>
+                    <div class="progress mb-2">
+                        <div class="progress-bar bg-warning" style="width: {{ (stats.total_views/100000*100)|round|min(100) }}%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>📈 Insights y Recomendaciones</h5>
+            </div>
+            <div class="card-body">
+                {% if stats.total_completados > 0 %}
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="insight-card p-3 border rounded">
+                            <h6><i class="fas fa-lightbulb text-warning"></i> Mejor Día</h6>
+                            <p class="mb-0">Analiza qué días tienen mejor performance para optimizar tu calendario.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="insight-card p-3 border rounded">
+                            <h6><i class="fas fa-target text-success"></i> Temas Top</h6>
+                            <p class="mb-0">Los temas de finanzas y emprendimiento están funcionando mejor.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="insight-card p-3 border rounded">
+                            <h6><i class="fas fa-rocket text-primary"></i> Escalar</h6>
+                            <p class="mb-0">Con {{ stats.tasa_completado }}% de completado, el canal va por buen camino.</p>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="text-center text-muted">
+                    <i class="fas fa-info-circle fa-2x mb-3"></i>
+                    <p>Completa algunos shorts para ver insights personalizados</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
