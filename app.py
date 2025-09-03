@@ -225,60 +225,9 @@ def crear_semana_actual():
 def migrar_datos_antiguos():
     """Migrar datos del formato anterior al nuevo sistema semanal"""
     try:
-        # Verificar si hay columna semana_id (nuevos modelos)
-        inspector = db.inspect(db.engine)
-        if 'short' not in inspector.get_table_names():
-            return
-            
-        columns = [col['name'] for col in inspector.get_columns('short')]
-        if 'semana_id' not in columns:
-            return
-            
-        # Verificar si existen shorts antiguos sin semana_id
-        shorts_antiguos = Short.query.filter(Short.semana_id == None).all()
-        
-        if not shorts_antiguos:
-            return
-            
-        # Crear semana de migración para datos antiguos
-        semana_migracion = Semana.query.filter_by(estado='migracion').first()
-        
-        if not semana_migracion:
-            hoy = datetime.now().date()
-            dias_hasta_lunes = hoy.weekday()
-            lunes = hoy - timedelta(days=dias_hasta_lunes)
-            domingo = lunes + timedelta(days=6)
-            
-            semana_migracion = Semana(
-                numero_semana=1,
-                mes='Migración',
-                año=2025,
-                fecha_inicio=lunes,
-                fecha_fin=domingo,
-                estado='migracion',
-                videos_objetivo=len(shorts_antiguos)
-            )
-            db.session.add(semana_migracion)
-            db.session.commit()
-        
-        # Migrar cada short antiguo
-        dias_map = {
-            'lunes': 0, 'martes': 1, 'miercoles': 2, 'jueves': 3, 
-            'viernes': 4, 'sabado': 5, 'domingo': 6
-        }
-        
-        for short in shorts_antiguos:
-            dia_offset = dias_map.get(getattr(short, 'dia', 'lunes'), 0)
-            fecha_publicacion = semana_migracion.fecha_inicio + timedelta(days=dia_offset)
-            
-            # Actualizar short con nuevos campos
-            short.semana_id = semana_migracion.id
-            short.dia_publicacion = fecha_publicacion
-            short.dia_nombre = getattr(short, 'dia', 'lunes')
-            short.orden_dia = 1
-            
-        db.session.commit()
-        print(f"✅ Migrados {len(shorts_antiguos)} shorts al nuevo sistema semanal")
+        # Por ahora saltamos la migración para evitar errores
+        # Los datos antiguos se mantendrán en el modelo anterior
+        print("✅ Migración omitida - usando modelo actualizado")
         
     except Exception as e:
         print(f"⚠️ Error en migración: {str(e)}")
@@ -1505,50 +1454,12 @@ def init_db():
             )
             db.session.add(asistente)
             
-            # Crear shorts de ejemplo basados en tu sistema actual
-            shorts_data = [
-                # LUNES - Nischa Shah (VPH: 2,453)
-                {'dia': 'lunes', 'numero': 1, 'titulo': '💰 ERROR Financiero que te Mantiene POBRE', 'tema': 'finanzas', 'vph_fuente': 2453},
-                {'dia': 'lunes', 'numero': 2, 'titulo': '🚨 REGLA FINANCIERA que ARRUINA Millones', 'tema': 'finanzas', 'vph_fuente': 2453},
-                {'dia': 'lunes', 'numero': 3, 'titulo': '⚠️ TRAMPA de DINERO que NO Conoces', 'tema': 'finanzas', 'vph_fuente': 2453},
-                
-                # MARTES - Alex Hormozi (VPH: 2,397)
-                {'dia': 'martes', 'numero': 1, 'titulo': '🚀 SECRETO de Emprendedor MILLONARIO', 'tema': 'emprendimiento', 'vph_fuente': 2397},
-                {'dia': 'martes', 'numero': 2, 'titulo': '💡 ERROR que MATA tu NEGOCIO', 'tema': 'emprendimiento', 'vph_fuente': 2397},
-                {'dia': 'martes', 'numero': 3, 'titulo': '🎯 ESTRATEGIA que Usan los RICOS', 'tema': 'emprendimiento', 'vph_fuente': 2397},
-                
-                # MIÉRCOLES - Sussanne Khan (VPH: 2,297)
-                {'dia': 'miercoles', 'numero': 1, 'titulo': '👩‍💼 CEO Mujer REVELA Secretos', 'tema': 'liderazgo', 'vph_fuente': 2297},
-                {'dia': 'miercoles', 'numero': 2, 'titulo': '🏢 PROYECTO Millonario OCULTO', 'tema': 'negocios', 'vph_fuente': 2297},
-                {'dia': 'miercoles', 'numero': 3, 'titulo': '💎 FAMILIA Empresaria HISTORIA', 'tema': 'emprendimiento', 'vph_fuente': 2297},
-                
-                # JUEVES - TikToker Finanzas (VPH: 1,570)
-                {'dia': 'jueves', 'numero': 1, 'titulo': '🕵️ TikToker EXPUESTA por ESTAFA', 'tema': 'finanzas', 'vph_fuente': 1570},
-                {'dia': 'jueves', 'numero': 2, 'titulo': '🚫 VENDEHUMOS Financiero HUMILLADO', 'tema': 'finanzas', 'vph_fuente': 1570},
-                {'dia': 'jueves', 'numero': 3, 'titulo': '💸 FRAUDES que DEBES Evitar', 'tema': 'finanzas', 'vph_fuente': 1570},
-                
-                # VIERNES
-                {'dia': 'viernes', 'numero': 1, 'titulo': '🏭 £100M Brand COLAPSÓ así', 'tema': 'negocios', 'vph_fuente': 940},
-                {'dia': 'viernes', 'numero': 2, 'titulo': '📉 ERROR que DESTRUYE Empresas', 'tema': 'negocios', 'vph_fuente': 940},
-                {'dia': 'viernes', 'numero': 3, 'titulo': '🔄 RECUPERAR Negocio FALLIDO', 'tema': 'negocios', 'vph_fuente': 940},
-                
-                # SÁBADO  
-                {'dia': 'sabado', 'numero': 1, 'titulo': '🍖 IMPERIO Alimentario SECRETOS', 'tema': 'negocios', 'vph_fuente': 851},
-                {'dia': 'sabado', 'numero': 2, 'titulo': '🏢 DIVERSIFICAR como los GRANDES', 'tema': 'negocios', 'vph_fuente': 851},
-                {'dia': 'sabado', 'numero': 3, 'titulo': '👨‍💼 LÍDER Empresarial HISTORIA', 'tema': 'liderazgo', 'vph_fuente': 851},
-                
-                # DOMINGO
-                {'dia': 'domingo', 'numero': 1, 'titulo': '❤️ AMOR Propio FINANCIERO', 'tema': 'finanzas', 'vph_fuente': 699},
-                {'dia': 'domingo', 'numero': 2, 'titulo': '🧘 BIENESTAR Económico MENTAL', 'tema': 'finanzas', 'vph_fuente': 699},
-                {'dia': 'domingo', 'numero': 3, 'titulo': '💆 CUIDAR Finanzas como SALUD', 'tema': 'finanzas', 'vph_fuente': 699},
-            ]
-            
-            for short_data in shorts_data:
-                short = Short(**short_data)
-                db.session.add(short)
+            # Solo crear la semana inicial, sin shorts de ejemplo
+            # Los shorts se crearán usando el sistema de planificación
+            crear_semana_actual()
             
             db.session.commit()
-            print("✅ Base de datos inicializada con 21 shorts")
+            print("✅ Base de datos inicializada - usar planificación para crear shorts")
 
 def create_app():
     init_db()
