@@ -216,6 +216,13 @@ def init_db():
             db.session.commit()
             print("✅ Base de datos inicializada con 21 shorts")
 
+def create_app():
+    init_db()
+    return app
+
 if __name__ == '__main__':
     init_db()
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+else:
+    # Para Railway/Gunicorn
+    init_db()
