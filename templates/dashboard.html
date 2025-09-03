@@ -6,6 +6,7 @@
 <!-- Header con selector de semana -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
+        {% if semana_actual %}
         <h1><i class="fas fa-calendar-week me-2"></i>Semana {{ semana_actual.numero_semana }} - {{ semana_actual.mes }} {{ semana_actual.año }}</h1>
         <p class="text-muted mb-0">
             <i class="fas fa-calendar-alt me-1"></i>
@@ -14,8 +15,13 @@
                 {{ semana_actual.estado.title() }}
             </span>
         </p>
+        {% else %}
+        <h1><i class="fas fa-exclamation-triangle me-2"></i>Error cargando semana</h1>
+        <p class="text-danger">{{ error_message if error_message else 'No se pudo cargar la información de la semana' }}</p>
+        {% endif %}
     </div>
     
+    {% if todas_semanas %}
     <div class="dropdown">
         <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
             <i class="fas fa-exchange-alt me-1"></i>Cambiar Semana
@@ -23,7 +29,7 @@
         <ul class="dropdown-menu">
             {% for semana in todas_semanas %}
             <li>
-                <a class="dropdown-item {% if semana.id == semana_actual.id %}active{% endif %}" 
+                <a class="dropdown-item {% if semana_actual and semana.id == semana_actual.id %}active{% endif %}" 
                    href="/?semana_id={{ semana.id }}">
                     Semana {{ semana.numero_semana }} - {{ semana.mes }} {{ semana.año }}
                     <br><small class="text-muted">{{ semana.fecha_inicio.strftime('%d/%m') }} - {{ semana.fecha_fin.strftime('%d/%m') }}</small>
@@ -38,15 +44,17 @@
             </li>
         </ul>
     </div>
+    {% endif %}
 </div>
 
 <!-- Estadísticas Resumen -->
+{% if stats %}
 <div class="row mb-4">
     <div class="col-md-2">
         <div class="card text-center bg-primary text-white">
             <div class="card-body">
                 <i class="fas fa-video fa-2x mb-2"></i>
-                <h3>{{ stats.total_shorts }}</h3>
+                <h3>{{ stats.total_shorts or 0 }}</h3>
                 <p class="mb-0">Planificados</p>
             </div>
         </div>
@@ -55,7 +63,7 @@
         <div class="card text-center bg-info text-white">
             <div class="card-body">
                 <i class="fas fa-search fa-2x mb-2"></i>
-                <h3>{{ stats.investigacion }}</h3>
+                <h3>{{ stats.investigacion or 0 }}</h3>
                 <p class="mb-0">Investigación</p>
             </div>
         </div>
@@ -64,7 +72,7 @@
         <div class="card text-center bg-warning text-white">
             <div class="card-body">
                 <i class="fas fa-clock fa-2x mb-2"></i>
-                <h3>{{ stats.en_proceso }}</h3>
+                <h3>{{ stats.en_proceso or 0 }}</h3>
                 <p class="mb-0">En Proceso</p>
             </div>
         </div>
@@ -73,7 +81,7 @@
         <div class="card text-center bg-success text-white">
             <div class="card-body">
                 <i class="fas fa-check-circle fa-2x mb-2"></i>
-                <h3>{{ stats.completados }}</h3>
+                <h3>{{ stats.completados or 0 }}</h3>
                 <p class="mb-0">Completados</p>
             </div>
         </div>
@@ -82,7 +90,7 @@
         <div class="card text-center bg-dark text-white">
             <div class="card-body">
                 <i class="fas fa-percentage fa-2x mb-2"></i>
-                <h3>{{ stats.progreso }}%</h3>
+                <h3>{{ stats.progreso or 0 }}%</h3>
                 <p class="mb-0">Progreso</p>
             </div>
         </div>
@@ -91,12 +99,13 @@
         <div class="card text-center bg-secondary text-white">
             <div class="card-body">
                 <i class="fas fa-target fa-2x mb-2"></i>
-                <h3>{{ semana_actual.videos_objetivo }}</h3>
+                <h3>{{ semana_actual.videos_objetivo if semana_actual else 0 }}</h3>
                 <p class="mb-0">Objetivo</p>
             </div>
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- Barra de progreso semanal -->
 <div class="card mb-4">
